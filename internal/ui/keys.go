@@ -23,6 +23,7 @@ type keyMap struct {
 	Edit     key.Binding
 	Shell    key.Binding
 	Restart  key.Binding
+	Trigger  key.Binding
 	Delete   key.Binding
 
 	// views / navigation
@@ -57,13 +58,14 @@ func defaultKeys() keyMap {
 		Top:      key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g", "top")),
 		Bottom:   key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("G", "bottom")),
 
-		Enter:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "describe")),
+		Enter:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "config")),
 		Describe: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "describe")),
 		YAML:     key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yaml")),
 		Logs:     key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "logs")),
 		Edit:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit (nvim)")),
 		Shell:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "shell / scale")),
 		Restart:  key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "rollout restart")),
+		Trigger:  key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "trigger job")),
 		Delete:   key.NewBinding(key.WithKeys("x", "delete"), key.WithHelp("x", "delete")),
 
 		Focus:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab ←→", "switch pane")),
@@ -94,7 +96,7 @@ type helpGroup struct {
 func (k keyMap) groups() []helpGroup {
 	return []helpGroup{
 		{"Navigation", []key.Binding{k.Up, k.Down, k.HalfUp, k.HalfDown, k.PageUp, k.PageDown, k.Top, k.Bottom}},
-		{"Actions", []key.Binding{k.Enter, k.Describe, k.YAML, k.Logs, k.Edit, k.Shell, k.Restart, k.Delete}},
+		{"Actions", []key.Binding{k.Enter, k.Describe, k.YAML, k.Logs, k.Edit, k.Shell, k.Restart, k.Trigger, k.Delete}},
 		{"Views", []key.Binding{k.Focus, k.Jump, k.Palette, k.Filter, k.Sort, k.Refresh, k.Wide}},
 		{"Cluster", []key.Binding{k.Namespace, k.AllNS, k.Context}},
 		{"Logs", []key.Binding{k.Follow}},

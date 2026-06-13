@@ -23,6 +23,7 @@ type screen int
 
 const (
 	screenTable screen = iota
+	screenConfig
 	screenDetail
 	screenLogs
 	screenCockpit
@@ -76,6 +77,7 @@ type App struct {
 	sidebar sidebar
 	cockpit cockpitView
 	table   tableView
+	config  configView
 	detail  detailView
 	logs    logView
 
@@ -91,6 +93,7 @@ type App struct {
 
 	// pending action context
 	scaleTarget  target
+	configTarget target
 	detailTarget target
 	logTarget    target
 	execTarget   target
@@ -113,6 +116,7 @@ func NewApp(cl *k8s.Client, th Theme) App {
 	a.sidebar = newSidebar(th, cl.Registry())
 	a.cockpit = newCockpitView(th)
 	a.table = newTableView(th)
+	a.config = newConfigView(th)
 	a.detail = newDetailView(th)
 	a.logs = newLogView(th)
 	a.sel = newSelector(th)
@@ -173,14 +177,15 @@ func (a *App) relayout() {
 	bh := a.bodyH()
 	if a.sidebarVisible() {
 		sw := a.sidebarWidth()
-		a.sidebar.setSize(sw-2, bh-2)
+		a.sidebar.setSize(paneContentWidth(sw), paneContentHeight(bh))
 		mainW := a.width - sw
-		a.table.setSize(mainW-2, bh-2)
+		a.table.setSize(paneContentWidth(mainW), paneContentHeight(bh))
 	} else {
-		a.table.setSize(a.width, bh)
+		a.table.setSize(paneContentWidth(a.width), paneContentHeight(bh))
 	}
-	a.detail.setSize(a.width, bh)
-	a.logs.setSize(a.width, bh)
+	a.config.setSize(paneContentWidth(a.width), paneContentHeight(bh))
+	a.detail.setSize(paneContentWidth(a.width), paneContentHeight(bh))
+	a.logs.setSize(paneContentWidth(a.width), paneContentHeight(bh))
 }
 
 func (a *App) setStatus(text string, isErr bool) {
@@ -273,6 +278,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.detail.setMessage(m.title, "Error: "+m.err.Error())
 			} else {
 				a.detail.setYAML(m.title, m.yaml)
+			}
+		}
+		return a, nil
+
+	case configLoadedMsg:
+		// Ignore stale fetches if the user moved to another object before this
+		// response arrived.
+		if a.screen == screenConfig &&
+			m.res.Key() == a.configTarget.res.Key() &&
+			m.ns == a.configTarget.ns && m.name == a.configTarget.name {
+			if m.err != nil {
+				a.config.setMessage(m.title, "Error: "+m.err.Error())
+			} else {
+				a.config.setObject(m.res, m.title, m.obj)
 			}
 		}
 		return a, nil
@@ -399,6 +418,8 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch a.screen {
+	case screenConfig:
+		return a.updateConfig(msg)
 	case screenDetail:
 		return a.updateDetail(msg)
 	case screenLogs:
@@ -544,7 +565,9 @@ func (a App) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.focus = focusSidebar
 		}
 		return a, nil
-	case key.Matches(msg, a.keys.Enter, a.keys.Describe, a.keys.YAML):
+	case key.Matches(msg, a.keys.Enter):
+		return a.openConfig()
+	case key.Matches(msg, a.keys.Describe, a.keys.YAML):
 		return a.openDetail()
 	case key.Matches(msg, a.keys.Logs):
 		return a.openLogs()
@@ -556,6 +579,8 @@ func (a App) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.openSort()
 	case key.Matches(msg, a.keys.Restart):
 		return a.openRestart()
+	case key.Matches(msg, a.keys.Trigger):
+		return a.openTriggerJob()
 	case key.Matches(msg, a.keys.Delete):
 		return a.openDelete()
 	default:
@@ -565,13 +590,41 @@ func (a App) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (a App) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, a.keys.Back) || msg.String() == "q":
+		a.screen = screenTable
+		return a, nil
+	case key.Matches(msg, a.keys.Describe, a.keys.YAML):
+		return a.openDetailTarget(a.configTarget)
+	case key.Matches(msg, a.keys.Edit):
+		return a.editTarget(a.configTarget)
+	case key.Matches(msg, a.keys.Trigger):
+		return a.openTriggerJobTarget(a.configTarget)
+	case key.Matches(msg, a.keys.Top):
+		a.config.vp.GotoTop()
+		return a, nil
+	case key.Matches(msg, a.keys.Bottom):
+		a.config.vp.GotoBottom()
+		return a, nil
+	default:
+		var cmd tea.Cmd
+		a.config, cmd = a.config.Update(msg)
+		return a, cmd
+	}
+}
+
 func (a App) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, a.keys.Back) || msg.String() == "q":
 		a.screen = screenTable
 		return a, nil
+	case key.Matches(msg, a.keys.Enter):
+		return a.openConfigTarget(a.detailTarget)
 	case key.Matches(msg, a.keys.Edit):
 		return a.editTarget(a.detailTarget)
+	case key.Matches(msg, a.keys.Trigger):
+		return a.openTriggerJobTarget(a.detailTarget)
 	case key.Matches(msg, a.keys.Top):
 		a.detail.vp.GotoTop()
 		return a, nil
@@ -706,10 +759,35 @@ func (a App) openDetail() (tea.Model, tea.Cmd) {
 	if !ok {
 		return a, nil
 	}
-	a.detailTarget = target{res: a.res, ns: row.Namespace, name: row.Name}
+	return a.openDetailTarget(target{res: a.res, ns: row.Namespace, name: row.Name})
+}
+
+func (a App) openDetailTarget(t target) (tea.Model, tea.Cmd) {
+	if t.name == "" {
+		return a, nil
+	}
+	a.detailTarget = t
 	a.screen = screenDetail
-	a.detail.setMessage(row.Name, "loading…")
-	return a, loadDetailCmd(a.client, a.res, row.Namespace, row.Name)
+	a.detail.setMessage(t.name, "loading…")
+	return a, loadDetailCmd(a.client, t.res, t.ns, t.name)
+}
+
+func (a App) openConfig() (tea.Model, tea.Cmd) {
+	row, ok := a.table.selected()
+	if !ok {
+		return a, nil
+	}
+	return a.openConfigTarget(target{res: a.res, ns: row.Namespace, name: row.Name})
+}
+
+func (a App) openConfigTarget(t target) (tea.Model, tea.Cmd) {
+	if t.name == "" {
+		return a, nil
+	}
+	a.configTarget = t
+	a.screen = screenConfig
+	a.config.setMessage(t.name, "loading…")
+	return a, loadConfigCmd(a.client, t.res, t.ns, t.name)
 }
 
 func (a App) openLogs() (tea.Model, tea.Cmd) {
@@ -817,7 +895,7 @@ func (a App) startLogs(ns, pod, container string) (tea.Model, tea.Cmd) {
 	a.logs.session = sess
 	a.logs.ns, a.logs.pod, a.logs.cont = ns, pod, container
 	a.logs.title = pod + " › " + container
-	a.logs.setSize(a.width, a.bodyH())
+	a.logs.setSize(paneContentWidth(a.width), paneContentHeight(a.bodyH()))
 
 	ch := make(chan logEvent, 256)
 	a.logs.ch = ch
@@ -1049,6 +1127,32 @@ func (a App) openRestart() (tea.Model, tea.Cmd) {
 		restartCmd(a.client, a.res, row.Namespace, row.Name))
 }
 
+func (a App) openTriggerJob() (tea.Model, tea.Cmd) {
+	row, ok := a.table.selected()
+	if !ok {
+		return a, nil
+	}
+	return a.openTriggerJobTarget(target{res: a.res, ns: row.Namespace, name: row.Name})
+}
+
+func (a App) openTriggerJobTarget(t target) (tea.Model, tea.Cmd) {
+	if !t.res.IsCronJob() {
+		a.setStatus("trigger: switch to cronjobs first", true)
+		return a, nil
+	}
+	ns := t.ns
+	if ns == "" {
+		ns = a.namespace
+	}
+	if ns == "" {
+		a.setStatus("trigger: cronjob namespace unavailable", true)
+		return a, nil
+	}
+	loc := qualified(ns, t.name)
+	return a.confirmAction("Trigger Job", "Create one-off Job from "+loc+" ?", false,
+		triggerJobCmd(a.client, ns, t.name))
+}
+
 // confirmAction opens the confirm overlay for a command to run on yes.
 func (a App) confirmAction(title, message string, danger bool, action tea.Cmd) (tea.Model, tea.Cmd) {
 	a.confirm = confirmView{th: a.theme, title: title, message: message, danger: danger, action: action}
@@ -1107,7 +1211,8 @@ func (a App) openPalette() (tea.Model, tea.Cmd) {
 	// discovery surface for what you can do right now.
 	if row, ok := a.table.selected(); ok {
 		items = append(items,
-			selItem{title: "Describe " + row.Name, desc: "enter", id: "act:describe"},
+			selItem{title: "Open config for " + row.Name, desc: "enter", id: "act:config"},
+			selItem{title: "Describe " + row.Name, desc: "d", id: "act:describe"},
 			selItem{title: "View YAML", desc: "y", id: "act:yaml"},
 			selItem{title: "Edit in editor", desc: "e", id: "act:edit"},
 			selItem{title: "Delete " + row.Name, desc: "x", id: "act:delete"},
@@ -1126,6 +1231,9 @@ func (a App) openPalette() (tea.Model, tea.Cmd) {
 		}
 		if a.res.Restartable() {
 			items = append(items, selItem{title: "Rollout restart", desc: "R", id: "act:restart"})
+		}
+		if a.res.IsCronJob() {
+			items = append(items, selItem{title: "Trigger job now", desc: "t", id: "act:trigger"})
 		}
 	}
 
@@ -1231,6 +1339,8 @@ func (a App) applyPalette(id string) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	switch id {
+	case "act:config":
+		return a.openConfig()
 	case "act:describe", "act:yaml":
 		return a.openDetail()
 	case "act:edit":
@@ -1247,6 +1357,8 @@ func (a App) applyPalette(id string) (tea.Model, tea.Cmd) {
 		return a.openScale()
 	case "act:restart":
 		return a.openRestart()
+	case "act:trigger":
+		return a.openTriggerJob()
 	case "cmd:jump":
 		return a.openResourceJump()
 	case "cmd:filter":
@@ -1296,10 +1408,12 @@ func (a App) View() string {
 		body = a.confirm.View(a.width, a.bodyH())
 	default:
 		switch a.screen {
+		case screenConfig:
+			body = a.renderPane(a.theme.PaneActive, a.config.View(), a.width, a.bodyH())
 		case screenDetail:
-			body = a.detail.View()
+			body = a.renderPane(a.theme.PaneActive, a.detail.View(), a.width, a.bodyH())
 		case screenLogs:
-			body = a.logs.View()
+			body = a.renderPane(a.theme.PaneActive, a.logs.View(), a.width, a.bodyH())
 		case screenCockpit:
 			body = a.cockpitScreen()
 		default:
@@ -1331,8 +1445,7 @@ func (a App) renderSidebar() string {
 	if a.focus == focusSidebar {
 		style = a.theme.PaneActive
 	}
-	return style.Width(a.sidebarWidth() - 2).Height(a.bodyH() - 2).MaxHeight(a.bodyH()).
-		Render(a.sidebar.View(a.activeNavKey(), a.focus == focusSidebar))
+	return a.renderPane(style, a.sidebar.View(a.activeNavKey(), a.focus == focusSidebar), a.sidebarWidth(), a.bodyH())
 }
 
 // paneScreen renders [sidebar | main], wrapping main in a focus-aware border.
@@ -1342,13 +1455,17 @@ func (a App) paneScreen(main string) string {
 		mainStyle = a.theme.PaneInactive
 	}
 	mainW := a.width - a.sidebarWidth()
-	box := mainStyle.Width(mainW - 2).Height(a.bodyH() - 2).MaxHeight(a.bodyH()).Render(main)
+	box := a.renderPane(mainStyle, main, mainW, a.bodyH())
 	return lipgloss.JoinHorizontal(lipgloss.Top, a.renderSidebar(), box)
+}
+
+func (a App) renderPane(style lipgloss.Style, content string, outerW, outerH int) string {
+	return style.Width(paneStyleWidth(outerW)).Height(paneStyleHeight(outerH)).MaxHeight(outerH).Render(content)
 }
 
 func (a App) tableScreen() string {
 	if !a.sidebarVisible() {
-		return a.table.View()
+		return a.renderPane(a.theme.PaneActive, a.table.View(), a.width, a.bodyH())
 	}
 	return a.paneScreen(a.table.View())
 }
@@ -1475,8 +1592,18 @@ func (a App) hints() []hint {
 		return []hint{{"y", "confirm"}, {"n", "cancel"}}
 	}
 	switch a.screen {
+	case screenConfig:
+		h := []hint{{"↑↓", "scroll"}, {"d", "describe"}}
+		if a.configTarget.res.IsCronJob() {
+			h = append(h, hint{"t", "trigger"})
+		}
+		return append(h, hint{"e", "edit"}, hint{"esc", "back"})
 	case screenDetail:
-		return []hint{{"↑↓", "scroll"}, {"e", "edit"}, {"esc", "back"}}
+		h := []hint{{"↑↓", "scroll"}, {"enter", "config"}}
+		if a.detailTarget.res.IsCronJob() {
+			h = append(h, hint{"t", "trigger"})
+		}
+		return append(h, hint{"e", "edit"}, hint{"esc", "back"})
 	case screenLogs:
 		return []hint{{"↑↓", "scroll"}, {"f", "follow"}, {"esc", "back"}}
 	case screenCockpit:
@@ -1490,7 +1617,7 @@ func (a App) hints() []hint {
 	}
 
 	// Context-aware: surface the actions that apply to the current resource.
-	h := []hint{{"enter", "describe"}}
+	h := []hint{{"enter", "config"}, {"d", "describe"}}
 	switch {
 	case a.res.IsPod():
 		h = append(h, hint{"l", "logs"}, hint{"s", "shell"})
@@ -1501,6 +1628,9 @@ func (a App) hints() []hint {
 	}
 	if a.res.Restartable() {
 		h = append(h, hint{"R", "restart"})
+	}
+	if a.res.IsCronJob() {
+		h = append(h, hint{"t", "trigger"})
 	}
 	h = append(h,
 		hint{"e", "edit"}, hint{"x", "del"}, hint{"/", "filter"}, hint{"S", "sort"},

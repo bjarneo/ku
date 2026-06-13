@@ -39,3 +39,31 @@ func clamp(v, lo, hi int) int {
 	}
 	return v
 }
+
+const (
+	panePaddingY = 0
+	panePaddingX = 1
+)
+
+func paneStyleWidth(outer int) int {
+	return paneInnerSize(outer, 2)
+}
+
+func paneStyleHeight(outer int) int {
+	return paneInnerSize(outer, 2)
+}
+
+func paneContentWidth(outer int) int {
+	return paneInnerSize(outer, 2+2*panePaddingX)
+}
+
+func paneContentHeight(outer int) int {
+	return paneInnerSize(outer, 2+2*panePaddingY)
+}
+
+func paneInnerSize(outer, frame int) int {
+	if n := outer - frame; n > 0 {
+		return n
+	}
+	return 1
+}

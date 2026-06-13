@@ -61,8 +61,8 @@ func newTermView(th Theme) termView {
 // termDims computes the emulator size from the available body area, reserving
 // space for the panel border and a one-line title.
 func termDims(width, bodyH int) (cols, rows int) {
-	cols = width - 2
-	rows = bodyH - 3
+	cols = paneContentWidth(width)
+	rows = paneContentHeight(bodyH) - 1
 	if cols < 8 {
 		cols = 8
 	}
@@ -112,7 +112,7 @@ func (t termView) View(width, bodyH int) string {
 	titleLine := spread(title, hintR, cols)
 
 	inner := titleLine + "\n" + t.renderScreen()
-	box := th.PaneActive.Render(inner)
+	box := th.PaneActive.Width(paneStyleWidth(width)).Height(paneStyleHeight(bodyH)).Render(inner)
 	return lipgloss.Place(width, bodyH, lipgloss.Center, lipgloss.Center, box)
 }
 

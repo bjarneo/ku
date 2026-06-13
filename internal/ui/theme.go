@@ -129,6 +129,7 @@ type Theme struct {
 // NewTheme builds all styles from a palette.
 func NewTheme(name string, p Palette) Theme {
 	t := Theme{Name: name, P: p}
+	border := lipgloss.NormalBorder()
 
 	t.Logo = lipgloss.NewStyle().Bold(true).Foreground(p.LogoFg).Background(p.HeaderBg).Padding(0, 1)
 	t.HeaderKey = lipgloss.NewStyle().Foreground(p.Muted)
@@ -154,11 +155,11 @@ func NewTheme(name string, p Palette) Theme {
 	t.StatusErr = lipgloss.NewStyle().Foreground(p.Bad).Bold(true)
 	t.Spinner = lipgloss.NewStyle().Foreground(p.Accent)
 
-	t.PaneActive = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent)
-	t.PaneInactive = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Border)
+	t.PaneActive = lipgloss.NewStyle().Border(border).BorderForeground(p.Accent).Padding(panePaddingY, panePaddingX)
+	t.PaneInactive = lipgloss.NewStyle().Border(border).BorderForeground(p.Border).Padding(panePaddingY, panePaddingX)
 	t.NavSection = lipgloss.NewStyle().Foreground(p.Muted).Bold(true)
 
-	t.ModalBorder = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.Accent).Padding(1, 2)
+	t.ModalBorder = lipgloss.NewStyle().Border(border).BorderForeground(p.Accent).Padding(1, 2)
 	t.ModalTitle = lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
 	t.Prompt = lipgloss.NewStyle().Foreground(p.Accent2).Bold(true)
 	t.SelItem = lipgloss.NewStyle().Foreground(p.Fg)

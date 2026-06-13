@@ -100,7 +100,7 @@ func (c cockpitView) View(width, height int) string {
 	if warnH < 3 {
 		warnH = 3
 	}
-	warnings := c.panel("Recent warnings", c.warningLines(width-2), width, warnH)
+	warnings := c.panel("Recent warnings", c.warningLines(paneContentWidth(width)), width, warnH)
 
 	return clampBlock(lipgloss.JoinVertical(lipgloss.Left, top, warnings), width, height)
 }
@@ -156,14 +156,8 @@ func (c cockpitView) gauge(label string, p, width int) string {
 // panel draws a titled, bordered box of exactly outerW x outerH, clipping its
 // content (which may be styled) to fit.
 func (c cockpitView) panel(title string, lines []string, outerW, outerH int) string {
-	innerW := outerW - 2
-	innerH := outerH - 2
-	if innerW < 1 {
-		innerW = 1
-	}
-	if innerH < 1 {
-		innerH = 1
-	}
+	innerW := paneContentWidth(outerW)
+	innerH := paneContentHeight(outerH)
 	content := []string{c.th.ModalTitle.Render(truncate(title, innerW))}
 	for _, ln := range lines {
 		if len(content) >= innerH {
@@ -171,7 +165,7 @@ func (c cockpitView) panel(title string, lines []string, outerW, outerH int) str
 		}
 		content = append(content, ansi.Truncate(ln, innerW, "…"))
 	}
-	return c.th.PaneInactive.Width(innerW).Height(innerH).Render(strings.Join(content, "\n"))
+	return c.th.PaneInactive.Width(paneStyleWidth(outerW)).Height(paneStyleHeight(outerH)).Render(strings.Join(content, "\n"))
 }
 
 // --- helpers ---------------------------------------------------------------

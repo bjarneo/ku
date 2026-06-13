@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
+	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -45,6 +47,17 @@ func (c *Client) GetYAML(ctx context.Context, res ResourceInfo, namespace, name 
 	return string(b), nil
 }
 
+// GetObject fetches a single object as unstructured JSON with noisy managed
+// fields stripped. Callers render the object without changing cluster data.
+func (c *Client) GetObject(ctx context.Context, res ResourceInfo, namespace, name string) (map[string]interface{}, error) {
+	obj, err := c.resourceClient(res, namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+	return obj.Object, nil
+}
+
 // decodeSecretData replaces base64 data values with their decoded text in place
 // (for display). Binary values that are not valid UTF-8 are left as base64.
 func decodeSecretData(obj map[string]interface{}) {
@@ -72,6 +85,54 @@ func (c *Client) RolloutRestart(ctx context.Context, res ResourceInfo, namespace
 		`{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":%q}}}}}`, ts))
 	_, err := c.resourceClient(res, namespace).Patch(ctx, name, types.StrategicMergePatchType, patch, metav1.PatchOptions{})
 	return err
+}
+
+// TriggerCronJob creates a one-off Job from a CronJob's jobTemplate, similar to
+// `kubectl create job --from=cronjob/<name>`.
+func (c *Client) TriggerCronJob(ctx context.Context, namespace, name string) (string, error) {
+	cj, err := c.clientset.BatchV1().CronJobs(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	annotations := cloneStringMap(cj.Spec.JobTemplate.Annotations)
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations["cronjob.kubernetes.io/instantiate"] = "manual"
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: cronJobRunPrefix(name),
+			Namespace:    namespace,
+			Labels:       cloneStringMap(cj.Spec.JobTemplate.Labels),
+			Annotations:  annotations,
+		},
+		Spec: cj.Spec.JobTemplate.Spec,
+	}
+	created, err := c.clientset.BatchV1().Jobs(namespace).Create(ctx, job, metav1.CreateOptions{})
+	if err != nil {
+		return "", err
+	}
+	return created.Name, nil
+}
+
+func cronJobRunPrefix(name string) string {
+	const suffix = "-manual-"
+	const maxPrefix = 52 // leave room for the API server's generated suffix
+	if len(name)+len(suffix) > maxPrefix {
+		name = strings.TrimRight(name[:maxPrefix-len(suffix)], "-")
+	}
+	return name + suffix
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // Delete removes a single object.

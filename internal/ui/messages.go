@@ -40,6 +40,14 @@ type detailLoadedMsg struct {
 	err      error
 }
 
+type configLoadedMsg struct {
+	res      k8s.ResourceInfo
+	ns, name string
+	title    string
+	obj      map[string]interface{}
+	err      error
+}
+
 type namespacesMsg struct {
 	names []string
 	err   error
@@ -133,6 +141,19 @@ func loadDetailCmd(cl *k8s.Client, res k8s.ResourceInfo, ns, name string) tea.Cm
 	}
 }
 
+func loadConfigCmd(cl *k8s.Client, res k8s.ResourceInfo, ns, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := opCtx()
+		defer cancel()
+		obj, err := cl.GetObject(ctx, res, ns, name)
+		title := res.Resource + "/" + name
+		if ns != "" {
+			title = ns + "/" + name
+		}
+		return configLoadedMsg{res: res, ns: ns, name: name, title: title, obj: obj, err: err}
+	}
+}
+
 type nodeDebugReadyMsg struct {
 	ns        string
 	pod       string
@@ -222,6 +243,18 @@ func restartCmd(cl *k8s.Client, res k8s.ResourceInfo, ns, name string) tea.Cmd {
 			return actionDoneMsg{err: err}
 		}
 		return actionDoneMsg{text: "restarted " + name, reload: true}
+	}
+}
+
+func triggerJobCmd(cl *k8s.Client, ns, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := opCtx()
+		defer cancel()
+		job, err := cl.TriggerCronJob(ctx, ns, name)
+		if err != nil {
+			return actionDoneMsg{err: err}
+		}
+		return actionDoneMsg{text: "triggered job " + job}
 	}
 }
 
