@@ -43,6 +43,11 @@ func (r ResourceInfo) IsPod() bool {
 	return r.Group == "" && r.Resource == "pods"
 }
 
+// IsDeployment reports whether this resource is an apps Deployment list.
+func (r ResourceInfo) IsDeployment() bool {
+	return r.Resource == "deployments" && (r.Group == "" || r.Group == "apps")
+}
+
 // Scalable reports whether the resource exposes spec.replicas.
 func (r ResourceInfo) Scalable() bool {
 	switch r.Resource {

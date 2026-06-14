@@ -29,7 +29,7 @@ type Client struct {
 	DiscoveryWarning string
 
 	restConfig *rest.Config
-	clientset  *kubernetes.Clientset
+	clientset  kubernetes.Interface
 	dynamic    dynamic.Interface
 	disco      discovery.DiscoveryInterface
 

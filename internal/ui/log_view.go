@@ -23,9 +23,11 @@ type logView struct {
 	ns     string
 	pod    string
 	cont   string
+	deploy string
 	follow bool
 
 	session int
+	streams int
 	cancel  context.CancelFunc
 	ch      chan logEvent
 	lines   []string
@@ -87,13 +89,13 @@ func (l logView) View() string {
 }
 
 // streamLogs opens the log stream and feeds lines onto ch until the context is
-// canceled or the stream ends. It always delivers exactly one terminal event
-// (done) via defer so the waiting command never leaks.
-func streamLogs(ctx context.Context, cl *k8s.Client, ns, pod, cont string, session int, ch chan logEvent) {
+// canceled or the stream ends. It sends a done event unless cancellation already
+// made that event irrelevant.
+func streamLogs(ctx context.Context, cl *k8s.Client, ns, pod, cont, prefix string, session int, ch chan logEvent) {
 	defer func() {
 		select {
 		case ch <- logEvent{session: session, done: true}:
-		default:
+		case <-ctx.Done():
 		}
 	}()
 
@@ -110,10 +112,14 @@ func streamLogs(ctx context.Context, cl *k8s.Client, ns, pod, cont string, sessi
 	sc := bufio.NewScanner(rc)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
+		line := sc.Text()
+		if prefix != "" {
+			line = prefix + " | " + line
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case ch <- logEvent{session: session, line: sc.Text()}:
+		case ch <- logEvent{session: session, line: line}:
 		}
 	}
 	if err := sc.Err(); err != nil && ctx.Err() == nil {

@@ -53,6 +53,22 @@ func TestKubectlLogsCommand(t *testing.T) {
 	}
 }
 
+func TestKubectlDeploymentLogsCommand(t *testing.T) {
+	app := App{
+		client: &k8s.Client{ContextName: "kind-kli-demo"},
+		logs: logView{
+			ns:     "kli-demo",
+			deploy: "frontend",
+		},
+	}
+
+	got := app.kubectlLogsCommand()
+	want := "kubectl --context kind-kli-demo logs -n kli-demo deployment/frontend --all-pods --all-containers --prefix --tail 1000 -f"
+	if got != want {
+		t.Fatalf("kubectlLogsCommand() = %q; want %q", got, want)
+	}
+}
+
 func TestShellJoinQuotesUnsafeArgs(t *testing.T) {
 	got := shellJoin([]string{"kubectl", "--context", "team cluster", "get", "pods"})
 	if !strings.Contains(got, "'team cluster'") {

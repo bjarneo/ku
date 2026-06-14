@@ -370,13 +370,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.err != nil {
 			a.setStatus("logs: "+trimErr(m.err), true)
-			return a, nil
+			return a, waitForLog(a.logs.ch)
 		}
 		if m.done {
-			return a, nil
+			if a.logs.streams <= 1 {
+				a.logs.streams = 0
+				return a, nil
+			}
+			a.logs.streams--
+			return a, waitForLog(a.logs.ch)
 		}
 		a.logs.appendLine(m.line)
 		return a, waitForLog(a.logs.ch)
+
+	case deploymentLogsMsg:
+		return a.handleDeploymentLogs(m)
 
 	case statusMsg:
 		a.setStatus(m.text, m.err)
@@ -737,6 +745,8 @@ func (a App) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.openDetail()
 	case key.Matches(msg, a.keys.Logs):
 		return a.openLogs()
+	case key.Matches(msg, a.keys.DeployLogs):
+		return a.openDeploymentLogs()
 	case key.Matches(msg, a.keys.Edit):
 		return a.openEdit()
 	case key.Matches(msg, a.keys.Shell):
@@ -765,6 +775,8 @@ func (a App) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.openDetailTarget(a.configTarget)
 	case key.Matches(msg, a.keys.Edit):
 		return a.editTarget(a.configTarget)
+	case key.Matches(msg, a.keys.DeployLogs):
+		return a.openDeploymentLogsTarget(a.configTarget)
 	case key.Matches(msg, a.keys.Trigger):
 		return a.openTriggerJobTarget(a.configTarget)
 	case key.Matches(msg, a.keys.Top):
@@ -789,6 +801,8 @@ func (a App) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.openConfigTarget(a.detailTarget)
 	case key.Matches(msg, a.keys.Edit):
 		return a.editTarget(a.detailTarget)
+	case key.Matches(msg, a.keys.DeployLogs):
+		return a.openDeploymentLogsTarget(a.detailTarget)
 	case key.Matches(msg, a.keys.Trigger):
 		return a.openTriggerJobTarget(a.detailTarget)
 	case key.Matches(msg, a.keys.Top):
@@ -977,6 +991,35 @@ func (a App) openLogs() (tea.Model, tea.Cmd) {
 	return a, containersCmd(a.client, row.Namespace, row.Name, false)
 }
 
+func (a App) openDeploymentLogs() (tea.Model, tea.Cmd) {
+	row, ok := a.table.selected()
+	if !ok {
+		return a, nil
+	}
+	return a.openDeploymentLogsTarget(target{res: a.res, ns: row.Namespace, name: row.Name})
+}
+
+func (a App) openDeploymentLogsTarget(t target) (tea.Model, tea.Cmd) {
+	if t.name == "" {
+		return a, nil
+	}
+	if !t.res.IsDeployment() {
+		a.setStatus("logs: switch to deployments first", true)
+		return a, nil
+	}
+	ns := t.ns
+	if ns == "" {
+		ns = a.namespace
+	}
+	if ns == "" {
+		a.setStatus("logs: deployment namespace unavailable", true)
+		return a, nil
+	}
+	a.logTarget = target{res: t.res, ns: ns, name: t.name}
+	a.setStatus("loading logs for "+qualified(ns, t.name), false)
+	return a, deploymentLogsCmd(a.client, ns, t.name)
+}
+
 func (a App) openShellOrScale() (tea.Model, tea.Cmd) {
 	switch {
 	case a.res.IsPod():
@@ -1060,6 +1103,21 @@ func (a App) handleContainers(m containersMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+func (a App) handleDeploymentLogs(m deploymentLogsMsg) (tea.Model, tea.Cmd) {
+	if m.ns != a.logTarget.ns || m.name != a.logTarget.name || !a.logTarget.res.IsDeployment() {
+		return a, nil
+	}
+	if m.err != nil {
+		a.setStatus("logs: "+trimErr(m.err), true)
+		return a, nil
+	}
+	if len(m.targets) == 0 {
+		a.setStatus("logs: no pods found for deployment "+m.name, true)
+		return a, nil
+	}
+	return a.startDeploymentLogs(m.ns, m.name, m.targets)
+}
+
 func (a App) startLogs(ns, pod, container string) (tea.Model, tea.Cmd) {
 	a.logs.stop()
 	a.logSession++
@@ -1067,6 +1125,7 @@ func (a App) startLogs(ns, pod, container string) (tea.Model, tea.Cmd) {
 
 	a.logs = newLogView(a.theme)
 	a.logs.session = sess
+	a.logs.streams = 1
 	a.logs.ns, a.logs.pod, a.logs.cont = ns, pod, container
 	a.logs.title = pod + " › " + container
 	a.logs.setSize(paneContentWidth(a.width), paneContentHeight(a.bodyH()))
@@ -1077,7 +1136,35 @@ func (a App) startLogs(ns, pod, container string) (tea.Model, tea.Cmd) {
 	a.logs.cancel = cancel
 
 	a.screen = screenLogs
-	go streamLogs(ctx, a.client, ns, pod, container, sess, ch)
+	go streamLogs(ctx, a.client, ns, pod, container, "", sess, ch)
+	return a, waitForLog(ch)
+}
+
+func (a App) startDeploymentLogs(ns, deployment string, targets []k8s.LogTarget) (tea.Model, tea.Cmd) {
+	a.logs.stop()
+	a.logSession++
+	sess := a.logSession
+
+	a.logs = newLogView(a.theme)
+	a.logs.session = sess
+	a.logs.streams = len(targets)
+	a.logs.ns, a.logs.deploy = ns, deployment
+	a.logs.title = "deployment/" + deployment + " › all logs"
+	a.logs.setSize(paneContentWidth(a.width), paneContentHeight(a.bodyH()))
+
+	ch := make(chan logEvent, 256)
+	a.logs.ch = ch
+	ctx, cancel := context.WithCancel(context.Background())
+	a.logs.cancel = cancel
+
+	a.screen = screenLogs
+	if !a.statusErr {
+		a.status = ""
+	}
+	for _, t := range targets {
+		prefix := t.Pod + "/" + t.Container
+		go streamLogs(ctx, a.client, t.Namespace, t.Pod, t.Container, prefix, sess, ch)
+	}
 	return a, waitForLog(ch)
 }
 
@@ -1412,6 +1499,9 @@ func (a App) openPalette() (tea.Model, tea.Cmd) {
 				selItem{title: "Shell into pod", desc: "s", id: "act:shell"},
 			)
 		}
+		if a.res.IsDeployment() {
+			items = append(items, selItem{title: "Follow deployment logs", desc: "L", id: "act:deploylogs"})
+		}
 		if a.res.IsNodes() {
 			items = append(items, selItem{title: "Node shell (debug pod)", desc: "s", id: "act:nodeshell"})
 		}
@@ -1540,6 +1630,8 @@ func (a App) applyPalette(id string) (tea.Model, tea.Cmd) {
 		return a.openDelete()
 	case "act:logs":
 		return a.openLogs()
+	case "act:deploylogs":
+		return a.openDeploymentLogs()
 	case "act:shell":
 		return a.openShell()
 	case "act:nodeshell":
@@ -1800,12 +1892,18 @@ func (a App) hints() []hint {
 	switch a.screen {
 	case screenConfig:
 		h := []hint{{"↑↓", "scroll"}, {"d", "describe"}}
+		if a.configTarget.res.IsDeployment() {
+			h = append(h, hint{"L", "all logs"})
+		}
 		if a.configTarget.res.IsCronJob() {
 			h = append(h, hint{"t", "trigger"})
 		}
 		return append(h, hint{"e", "edit"}, hint{"O", "docs"}, hint{"C", "cmd"}, hint{"esc", "back"})
 	case screenDetail:
 		h := []hint{{"↑↓", "scroll"}, {"enter", "config"}}
+		if a.detailTarget.res.IsDeployment() {
+			h = append(h, hint{"L", "all logs"})
+		}
 		if a.detailTarget.res.IsCronJob() {
 			h = append(h, hint{"t", "trigger"})
 		}
@@ -1827,6 +1925,8 @@ func (a App) hints() []hint {
 	switch {
 	case a.res.IsPod():
 		h = append(h, hint{"l", "logs"}, hint{"s", "shell"})
+	case a.res.IsDeployment():
+		h = append(h, hint{"L", "all logs"})
 	case a.res.IsNodes():
 		h = append(h, hint{"s", "node shell"})
 	case a.res.Scalable():

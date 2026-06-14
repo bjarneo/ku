@@ -61,6 +61,12 @@ type containersMsg struct {
 	err     error
 }
 
+type deploymentLogsMsg struct {
+	ns, name string
+	targets  []k8s.LogTarget
+	err      error
+}
+
 type actionDoneMsg struct {
 	text   string
 	err    error
@@ -215,6 +221,15 @@ func containersCmd(cl *k8s.Client, ns, pod string, forExec bool) tea.Cmd {
 		defer cancel()
 		names, err := cl.PodContainers(ctx, ns, pod)
 		return containersMsg{ns: ns, pod: pod, names: names, forExec: forExec, err: err}
+	}
+}
+
+func deploymentLogsCmd(cl *k8s.Client, ns, name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := opCtx()
+		defer cancel()
+		targets, err := cl.DeploymentLogTargets(ctx, ns, name)
+		return deploymentLogsMsg{ns: ns, name: name, targets: targets, err: err}
 	}
 }
 

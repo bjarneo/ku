@@ -79,7 +79,7 @@ func (a App) kubectlCommand() string {
 			return a.kubectlGetObjectCommand(a.detailTarget)
 		}
 	case screenLogs:
-		if a.logs.pod != "" {
+		if a.logs.pod != "" || a.logs.deploy != "" {
 			return a.kubectlLogsCommand()
 		}
 	}
@@ -121,9 +121,13 @@ func (a App) kubectlLogsCommand() string {
 	if a.logs.ns != "" {
 		args = append(args, "-n", a.logs.ns)
 	}
-	args = append(args, a.logs.pod)
-	if a.logs.cont != "" {
-		args = append(args, "-c", a.logs.cont)
+	if a.logs.deploy != "" {
+		args = append(args, "deployment/"+a.logs.deploy, "--all-pods", "--all-containers", "--prefix")
+	} else {
+		args = append(args, a.logs.pod)
+		if a.logs.cont != "" {
+			args = append(args, "-c", a.logs.cont)
+		}
 	}
 	args = append(args, "--tail", strconv.FormatInt(logTailLines, 10), "-f")
 	return shellJoin(args)
