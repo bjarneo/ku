@@ -89,18 +89,40 @@ jobs:
       - name: Generate release notes
         env:
           REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..${TAG}"
+          else
+            RANGE="$TAG"
+          fi
+
+          CHANGELOG=""
+          while IFS='|' read -r hash title author || [ -n "$hash" ]; do
+            short_hash="${hash:0:7}"
+            username=$(gh api "repos/${REPO}/commits/$hash" --jq '.author.login' 2>/dev/null || echo "")
+
+            if [ -n "$username" ]; then
+              author_info="$author ([@$username](https://github.com/$username))"
+            else
+              author_info="$author"
+            fi
+
+            CHANGELOG="${CHANGELOG}- $title by $author_info ([\`$short_hash\`](https://github.com/${REPO}/commit/$hash))"$'\n'
+          done < <(git log "$RANGE" --pretty=format:"%H|%s|%an")
+
           {
             echo "## What's Changed"
             echo
-            if [ -n "$PREV_TAG" ]; then
-              git log "${PREV_TAG}..${TAG}" --pretty='- %s (`%h`)'
+            if [ -n "$CHANGELOG" ]; then
+              echo "$CHANGELOG"
               echo
+            fi
+            if [ -n "$PREV_TAG" ]; then
               echo "Full changelog: https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}"
-            else
-              git log "$TAG" --pretty='- %s (`%h`)'
             fi
             echo
             echo "## Checksums (SHA256)"
