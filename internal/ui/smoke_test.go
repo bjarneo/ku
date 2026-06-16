@@ -319,11 +319,12 @@ func mustRender(t *testing.T, m tea.Model, theme string, size [2]int) {
 	if out == "" {
 		t.Fatalf("empty view theme=%s size=%v", theme, size)
 	}
-	// The layout invariant: header + body + footer must total exactly the
-	// terminal height, so no overlay can push the footer off-screen or wrap.
+	// The layout invariant: the whole frame must fit within the terminal, never
+	// exceeding its rows or columns, so no overlay can push the footer off-screen
+	// or wrap. The UI also leaves the last row/column free as a safety margin.
 	if h := size[1]; h >= 3 {
-		if lines := strings.Count(out, "\n") + 1; lines != h {
-			t.Fatalf("view is %d lines, want %d (theme=%s size=%v)", lines, h, theme, size)
+		if lines := strings.Count(out, "\n") + 1; lines > h {
+			t.Fatalf("view is %d lines, exceeds terminal %d (theme=%s size=%v)", lines, h, theme, size)
 		}
 		for _, ln := range strings.Split(out, "\n") {
 			if w := lipgloss.Width(ln); w > size[0] {

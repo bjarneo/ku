@@ -220,8 +220,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.Width < 24 || m.Height < 10 {
 			a.gutter = 0
 		}
-		a.width = m.Width - 2*a.gutter
-		a.height = m.Height - 2*a.gutter
+		// Leave the terminal's last row and column unused. Some terminals (and
+		// multiplexers) over-report their size or scroll when the bottom-right
+		// cell is written, which otherwise pushes the bordered panes out of view.
+		a.width = m.Width - 2*a.gutter - 1
+		a.height = m.Height - 2*a.gutter - 1
 		if !a.sidebarVisible() {
 			a.focus = focusMain
 		}
