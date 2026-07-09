@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -30,8 +31,8 @@ func TestLogFilterNarrowsToMatches(t *testing.T) {
 	if l.matched != 1 {
 		t.Fatalf("expected 1 match for case-sensitive %q, got %d", "error", l.matched)
 	}
-	if strings.Contains(l.content, "info:") || strings.Contains(l.content, "ERROR:") {
-		t.Fatalf("filtered content should only contain the lower-case error line:\n%s", l.content)
+	if joined := strings.Join(l.filtered, "\n"); strings.Contains(joined, "info:") || strings.Contains(joined, "ERROR:") {
+		t.Fatalf("filtered content should only contain the lower-case error line:\n%s", joined)
 	}
 
 	// Case-insensitive flag is honored (RE2 syntax).
@@ -57,8 +58,8 @@ func TestLogFilterEmptyShowsAll(t *testing.T) {
 	if l.matched != len(lines) {
 		t.Fatalf("clearing the filter should show all %d lines, got %d", len(lines), l.matched)
 	}
-	if l.content != strings.Join(lines, "\n") {
-		t.Fatalf("expected full content restored, got:\n%s", l.content)
+	if joined := strings.Join(l.filtered, "\n"); joined != strings.Join(lines, "\n") {
+		t.Fatalf("expected full content restored, got:\n%s", joined)
 	}
 }
 
@@ -211,6 +212,75 @@ func TestLogSelectionEscCancels(t *testing.T) {
 	}
 }
 
+func TestStartingSelectionDoesNotMoveViewport(t *testing.T) {
+	for _, wrap := range []bool{true, false} {
+		name := "wrap"
+		if !wrap {
+			name = "nowrap"
+		}
+		t.Run(name, func(t *testing.T) {
+			l := newTestLogView() // 80x20
+			for i := 0; i < 200; i++ {
+				l.appendLine("line-" + itoa(i))
+			}
+			l.vp.SoftWrap = wrap
+			l.follow = false
+			l.vp.SetYOffset(50)
+			before := l.vp.YOffset()
+
+			l.startSelect() // keyboard entry
+			if got := l.vp.YOffset(); got != before {
+				t.Fatalf("startSelect moved the viewport: YOffset %d -> %d", before, got)
+			}
+			l.stopSelect()
+
+			l.vp.SetYOffset(before)
+			l.startSelectAt(3) // mouse press entry
+			if got := l.vp.YOffset(); got != before {
+				t.Fatalf("startSelectAt moved the viewport: YOffset %d -> %d", before, got)
+			}
+		})
+	}
+}
+
+func TestLogSelectionCopiesFullLineWhenNoWrap(t *testing.T) {
+	l := newTestLogView() // 80 columns wide
+	long := strings.Repeat("x", 300)
+	l.appendLine(long)
+	l.appendLine("short")
+
+	l.toggleWrap() // no-wrap truncates the long line on screen
+	if l.vp.SoftWrap {
+		t.Fatal("expected no-wrap mode")
+	}
+	l.startSelect()
+	l.setSelCursor(0)
+
+	if got := l.copySelection(); got != long {
+		t.Fatalf("no-wrap copy must return the full untruncated line: got %d chars, want %d", len(got), len(long))
+	}
+}
+
+func TestLogSelectionSnapshotSurvivesStreaming(t *testing.T) {
+	l := newTestLogView()
+	for i := 0; i < 3; i++ {
+		l.appendLine("line-" + itoa(i))
+	}
+	l.startSelect()
+	l.setSelCursor(0)
+	l.mark()
+	l.setSelCursor(2)
+
+	// Lines keep streaming in while the selection is frozen. The snapshot must
+	// not shift or get overwritten by the new lines.
+	for i := 0; i < 5; i++ {
+		l.appendLine("streamed-" + itoa(i))
+	}
+	if got, want := l.copySelection(), "line-0\nline-1\nline-2"; got != want {
+		t.Fatalf("selection snapshot corrupted by streaming: got %q, want %q", got, want)
+	}
+}
+
 func TestLogExpandsTabsToPreventOverflow(t *testing.T) {
 	l := newTestLogView()
 	l.appendLine("a\tb\tc")
@@ -221,6 +291,29 @@ func TestLogExpandsTabsToPreventOverflow(t *testing.T) {
 	// a at col 0, tabs advance to the next 8-column stop.
 	if l.lines[0] != "a       b       c" {
 		t.Fatalf("unexpected tab expansion: %q", l.lines[0])
+	}
+}
+
+func TestToggleWrapKeepsContentVisibleWhenScrolled(t *testing.T) {
+	l := newLogView(PickTheme("ansi"))
+	l.setSize(24, 8) // narrow, so long lines wrap into several rows each
+	for i := 0; i < 60; i++ {
+		l.appendLine(fmt.Sprintf("line-%02d %s", i, strings.Repeat("x", 40)))
+	}
+	// Following put us at the bottom, where the wrapped-row YOffset is large.
+	// Pause there: the stale offset is what used to blank the view on toggle.
+	l.follow = false
+
+	if !strings.Contains(l.vp.View(), "line-") {
+		t.Fatalf("precondition: wrapped view should show content:\n%q", l.vp.View())
+	}
+	l.toggleWrap() // wrap -> no-wrap
+	if !strings.Contains(l.vp.View(), "line-") {
+		t.Fatalf("toggling to no-wrap blanked the log view:\n%q", l.vp.View())
+	}
+	l.toggleWrap() // no-wrap -> wrap
+	if !strings.Contains(l.vp.View(), "line-") {
+		t.Fatalf("toggling back to wrap blanked the log view:\n%q", l.vp.View())
 	}
 }
 
@@ -255,8 +348,8 @@ func TestLogFilterAppliesToNewLines(t *testing.T) {
 	if l.matched != 2 {
 		t.Fatalf("expected 2 matches after streaming, got %d", l.matched)
 	}
-	if strings.Contains(l.content, "drop") {
-		t.Fatalf("streamed non-matching lines must stay hidden:\n%s", l.content)
+	if joined := strings.Join(l.filtered, "\n"); strings.Contains(joined, "drop") {
+		t.Fatalf("streamed non-matching lines must stay hidden:\n%s", joined)
 	}
 }
 
@@ -294,6 +387,30 @@ func TestLogCopyAllKeyCopiesToClipboard(t *testing.T) {
 	}
 }
 
+func TestLogsPaneHasNoSideBordersForCleanCopy(t *testing.T) {
+	a := App{theme: PickTheme("ansi")}
+	out := a.renderPagerPane("line one\nline two", 40, 10)
+	rows := strings.Split(out, "\n")
+	if len(rows) < 3 {
+		t.Fatalf("expected a framed pane, got %d rows", len(rows))
+	}
+	// Top and bottom rules keep the framed look.
+	if !strings.Contains(rows[0], "─") || !strings.Contains(rows[len(rows)-1], "─") {
+		t.Fatalf("expected top and bottom rules, got:\n%s", out)
+	}
+	// No row may carry a vertical border: a native terminal drag-select must copy
+	// clean log text, not the pane's │ characters.
+	for i, r := range rows {
+		if strings.Contains(r, "│") {
+			t.Fatalf("row %d has a vertical border, native copy would grab it: %q", i, r)
+		}
+	}
+	// The content sits flush against the left edge (no padding column).
+	if !strings.HasPrefix(rows[1], "line one") {
+		t.Fatalf("content should be flush-left for clean copy, got %q", rows[1])
+	}
+}
+
 func TestLogClearKeyEmptiesBufferAndResumesFollow(t *testing.T) {
 	app := App{client: &k8s.Client{}, theme: PickTheme("ansi"), keys: defaultKeys(), screen: screenLogs}
 	app.logs = newLogView(app.theme)
@@ -309,9 +426,9 @@ func TestLogClearKeyEmptiesBufferAndResumesFollow(t *testing.T) {
 	if a.overlay != overlayNone {
 		t.Fatalf("ctrl+l in logs should clear, not open an overlay (got overlay %v)", a.overlay)
 	}
-	if len(a.logs.lines) != 0 || a.logs.content != "" || a.logs.matched != 0 {
-		t.Fatalf("clear should empty the buffer: lines=%d content=%q matched=%d",
-			len(a.logs.lines), a.logs.content, a.logs.matched)
+	if len(a.logs.lines) != 0 || len(a.logs.filtered) != 0 || a.logs.matched != 0 {
+		t.Fatalf("clear should empty the buffer: lines=%d filtered=%d matched=%d",
+			len(a.logs.lines), len(a.logs.filtered), a.logs.matched)
 	}
 	if !a.logs.follow {
 		t.Fatal("clear should re-enable follow so fresh lines auto-scroll")
@@ -322,7 +439,7 @@ func TestLogClearKeyEmptiesBufferAndResumesFollow(t *testing.T) {
 
 	// The stream keeps running, so new lines flow back in after a clear.
 	a.logs.appendLine("fresh")
-	if a.logs.content != "fresh" {
-		t.Fatalf("post-clear append = %q, want %q", a.logs.content, "fresh")
+	if joined := strings.Join(a.logs.filtered, "\n"); joined != "fresh" {
+		t.Fatalf("post-clear append = %q, want %q", joined, "fresh")
 	}
 }

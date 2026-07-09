@@ -208,6 +208,38 @@ func TestRenderConfigPutsStatusBeforeOverview(t *testing.T) {
 	}
 }
 
+// configView is now a pager: it must re-lay-out the width-sensitive summary on
+// resize rather than blank or keep the stale width, and it supports copy.
+func TestConfigViewReRendersOnResize(t *testing.T) {
+	c := newConfigView(PickTheme("ansi"))
+	c.setSize(80, 20)
+	res := k8s.ResourceInfo{Resource: "secrets", Kind: "Secret"}
+	obj := map[string]interface{}{
+		"type": "Opaque",
+		"data": map[string]interface{}{"password": "aHVudGVyMg=="},
+	}
+	c.setObject(res, "secret/db", obj, nil)
+	if strings.TrimSpace(ansi.Strip(c.vp.View())) == "" {
+		t.Fatal("config view is blank after setObject")
+	}
+
+	c.setSize(48, 12) // narrower: must re-render, not blank or overflow
+	view := c.vp.View()
+	if strings.TrimSpace(ansi.Strip(view)) == "" {
+		t.Fatal("config view blanked after resize")
+	}
+	for _, ln := range strings.Split(view, "\n") {
+		if w := ansi.StringWidth(ln); w > 48 {
+			t.Fatalf("resized config line exceeds width 48 (%d): %q", w, ansi.Strip(ln))
+		}
+	}
+
+	// copyAll returns the plain summary (ANSI stripped).
+	if strings.Contains(c.copyAll(), "\x1b") {
+		t.Fatal("config copyAll must strip ANSI")
+	}
+}
+
 func TestRenderConfigSeparatesLongSecretKeys(t *testing.T) {
 	th := PickTheme("ansi")
 	res := k8s.ResourceInfo{Resource: "secrets", Kind: "Secret"}

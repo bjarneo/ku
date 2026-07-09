@@ -7,8 +7,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"charm.land/bubbles/v2/viewport"
-	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 
@@ -18,50 +16,54 @@ import (
 const configKeyWidth = 14
 
 // configView renders a curated, read-only configuration summary for common
-// Kubernetes objects.
+// Kubernetes objects. It embeds a pager for scroll/selection/copy; the summary
+// is laid out to the pane width, so it defaults to no-wrap and is re-rendered on
+// resize.
 type configView struct {
-	th    Theme
-	vp    viewport.Model
-	title string
+	pager
 	label string
+
+	// Source kept so the width-sensitive summary can be re-laid-out on resize.
+	res    k8s.ResourceInfo
+	obj    map[string]interface{}
+	usage  *k8s.PodUsage
+	hasObj bool
 }
 
 func newConfigView(th Theme) configView {
-	return configView{th: th, vp: viewport.New(), label: "config"}
+	c := configView{pager: newPager(th), label: "config"}
+	c.follow = false
+	c.vp.SoftWrap = false // the summary already fits the width; don't re-wrap columns
+	return c
 }
 
 func (c *configView) setSize(w, h int) {
-	if h < 1 {
-		h = 1
+	c.pager.setSize(w, h)
+	if c.hasObj {
+		c.SetContent(renderConfig(c.th, c.res, c.obj, c.vp.Width(), c.usage))
 	}
-	c.vp.SetWidth(w)
-	c.vp.SetHeight(h - 1)
 }
 
 func (c *configView) setMessage(title, body string) {
 	c.title = title
 	c.label = "config"
-	c.vp.SetContent(body)
-	c.vp.GotoTop()
+	c.hasObj = false
+	c.SetContent(body)
 }
 
 func (c *configView) setObject(res k8s.ResourceInfo, title string, obj map[string]interface{}, usage *k8s.PodUsage) {
 	c.title = title
 	c.label = strings.ToLower(res.Kind) + " config"
-	c.vp.SetContent(renderConfig(c.th, res, obj, c.vp.Width(), usage))
-	c.vp.GotoTop()
-}
-
-func (c configView) Update(msg tea.Msg) (configView, tea.Cmd) {
-	var cmd tea.Cmd
-	c.vp, cmd = c.vp.Update(msg)
-	return c, cmd
+	c.res, c.obj, c.usage, c.hasObj = res, obj, usage, true
+	c.SetContent(renderConfig(c.th, res, obj, c.vp.Width(), usage))
 }
 
 func (c configView) View() string {
-	title := c.th.ModalTitle.Render(c.title)
-	right := c.th.Dim.Render(c.label + " · " + scrollPercent(c.vp.ScrollPercent()))
-	return spread(title, right, c.vp.Width()) + "\n" + c.vp.View()
+	right, ok := c.selStatus()
+	if !ok {
+		right = c.th.Dim.Render(c.label + " · " + scrollPercent(c.vp.ScrollPercent()))
+	}
+	return c.view(right)
 }
 
 type configRow struct{ key, value string }

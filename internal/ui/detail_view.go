@@ -1,54 +1,36 @@
 package ui
 
-import (
-	"charm.land/bubbles/v2/viewport"
-	tea "charm.land/bubbletea/v2"
-)
-
-// detailView shows a single object's YAML in a scrollable viewport with
-// theme-aware syntax highlighting.
+// detailView shows a single object's YAML in a pager with theme-aware syntax
+// highlighting. It inherits scroll, wrap toggle, regex filter, and whole-line
+// selection/copy from the embedded pager.
 type detailView struct {
-	th    Theme
-	vp    viewport.Model
-	title string
+	pager
 }
 
 func newDetailView(th Theme) detailView {
-	return detailView{th: th, vp: viewport.New()}
-}
-
-func (d *detailView) setSize(w, h int) {
-	if h < 1 {
-		h = 1
-	}
-	d.vp.SetWidth(w)
-	d.vp.SetHeight(h - 1) // leave a row for the title
+	d := detailView{pager: newPager(th)}
+	d.follow = false // static content: load at the top, don't chase a tail
+	return d
 }
 
 // setMessage shows plain (unhighlighted) text such as "loading…" or an error.
 func (d *detailView) setMessage(title, body string) {
 	d.title = title
-	d.vp.SetContent(body)
-	d.vp.GotoTop()
+	d.SetContent(body)
 }
 
 // setYAML renders highlighted YAML.
 func (d *detailView) setYAML(title, yaml string) {
 	d.title = title
-	d.vp.SetContent(highlightYAML(yaml, d.th))
-	d.vp.GotoTop()
-}
-
-func (d detailView) Update(msg tea.Msg) (detailView, tea.Cmd) {
-	var cmd tea.Cmd
-	d.vp, cmd = d.vp.Update(msg)
-	return d, cmd
+	d.SetContent(highlightYAML(yaml, d.th))
 }
 
 func (d detailView) View() string {
-	title := d.th.ModalTitle.Render(d.title)
-	pct := d.th.Dim.Render(scrollPercent(d.vp.ScrollPercent()))
-	return spread(title, pct, d.vp.Width()) + "\n" + d.vp.View()
+	right, ok := d.selStatus()
+	if !ok {
+		right = d.th.Dim.Render(scrollPercent(d.vp.ScrollPercent()))
+	}
+	return d.view(right)
 }
 
 func scrollPercent(f float64) string {

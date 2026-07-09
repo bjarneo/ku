@@ -125,6 +125,17 @@ func paneContentHeight(outer int) int {
 	return paneInnerSize(outer, 2+2*panePaddingY)
 }
 
+// pagerContentWidth/pagerContentHeight size a borderless pager pane. It draws
+// only top and bottom rules, so content keeps the full inner width (no side
+// border or padding to subtract) and loses just the two rule rows in height.
+func pagerContentWidth(outer int) int {
+	return outer
+}
+
+func pagerContentHeight(outer int) int {
+	return paneInnerSize(outer, 2) // top + bottom rule
+}
+
 func paneInnerSize(outer, frame int) int {
 	if n := outer - frame; n > 0 {
 		return n

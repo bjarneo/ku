@@ -155,6 +155,29 @@ func TestAppSmoke(t *testing.T) {
 	}
 }
 
+// TestLogsScreenRendersFlushLeft renders the whole logs screen and checks that
+// the rows carrying log text have no vertical border, so a native drag-select
+// never grabs a │ character. It also guards against panics in the borderless
+// render path.
+func TestLogsScreenRendersFlushLeft(t *testing.T) {
+	th := PickTheme("ansi")
+	app := App{theme: th, client: &k8s.Client{}, gutter: 1, width: 78, height: 22}
+	app.logs = newLogView(th)
+	app.relayout()
+	app.screen = screenLogs
+	app.logs.title = "pod › app"
+	for i := 0; i < 40; i++ {
+		app.logs.appendLine("log line " + itoa(i))
+	}
+
+	out := app.render() // must not panic
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.Contains(ln, "log line") && strings.Contains(ln, "│") {
+			t.Fatalf("a log row carries a vertical border, native copy would grab it: %q", ln)
+		}
+	}
+}
+
 func TestPaneRenderingFitsShortBody(t *testing.T) {
 	th := PickTheme("ansi")
 	app := App{theme: th}
@@ -217,6 +240,43 @@ func TestIgnoresStaleLoadResults(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Navigating to a detail or config view while a table/cockpit refresh is in
+// flight must clear a.loading. Otherwise the in-flight response fails the seq
+// guard, never clears the flag, and the table auto-refresh (gated on !loading)
+// stays frozen after returning to the table.
+func TestOpenDetailConfigClearsInFlightLoadFlag(t *testing.T) {
+	res := k8s.ResourceInfo{Resource: "pods", Kind: "Pod", Namespaced: true}
+	th := PickTheme("ansi")
+
+	t.Run("detail", func(t *testing.T) {
+		app := App{client: &k8s.Client{}, res: res, screen: screenTable, loadSeq: 5, loading: true}
+		app.detail = newDetailView(th)
+		m, _ := app.openDetailTarget(target{res: res, ns: "default", name: "api-7d9"})
+		got := m.(App)
+		if got.loading {
+			t.Fatal("opening detail mid-refresh left loading stranded true")
+		}
+		if got.loadSeq != 6 {
+			t.Fatalf("loadSeq = %d, want 6", got.loadSeq)
+		}
+		// The abandoned refresh response arrives; it must stay ignored and not
+		// resurrect the flag.
+		m, _ = got.Update(resourcesLoadedMsg{client: got.client, seq: 5, res: res, tbl: fakeTable()})
+		if m.(App).loading {
+			t.Fatal("stale refresh response re-stranded loading")
+		}
+	})
+
+	t.Run("config", func(t *testing.T) {
+		app := App{client: &k8s.Client{}, res: res, screen: screenTable, loadSeq: 5, loading: true}
+		app.config = newConfigView(th)
+		m, _ := app.openConfigTarget(target{res: res, ns: "default", name: "api-7d9"})
+		if m.(App).loading {
+			t.Fatal("opening config mid-refresh left loading stranded true")
+		}
+	})
 }
 
 func TestStaleNodeDebugReadySchedulesCleanup(t *testing.T) {

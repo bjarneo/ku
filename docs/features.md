@@ -60,6 +60,11 @@ stripped), with theme-aware syntax highlighting. `g` / `G` jump to top and
 bottom. Secret `data` is base64-decoded in read-only views for readability;
 editing a Secret still fetches raw base64 so saves stay valid.
 
+The config summary and the YAML view share the same viewer as logs, so both
+support the same copy, selection, wrap toggle (`w`), and regex filter (`/`):
+drag with the mouse or press `v` to select lines and copy them clean (no
+borders, no styling), and `c` copies everything.
+
 ## Live resource usage
 
 On the nodes view, ku appends live CPU and memory usage with percentages from
@@ -81,6 +86,11 @@ name.
 `l` on a pod streams logs live in an overlay, starting with the last 1000 lines
 (it prompts for the container when there are several). `f` toggles auto-scroll
 so you can read back through history; `g` / `G` jump to top and bottom.
+
+Copy by dragging over the lines with the mouse and releasing, or with the
+keyboard via `v` (see keybindings). Either way the full line is copied even when
+truncated on screen, with borders and styling stripped. `/` filters by regex and
+`w` toggles wrap.
 
 ## Port-forward a Service
 
@@ -108,7 +118,8 @@ a virtual terminal. It runs `bash` if present, otherwise `sh`, over the cluster'
 exec stream (WebSocket with SPDY fallback, like kubectl). `Ctrl+\` detaches; the
 overlay also closes when you `exit`. Paste with `Ctrl+Shift+V`; `Ctrl+V` is sent
 to the running shell/program. Mouse selection uses your terminal's native
-click-and-drag selection inside shell mode.
+click-and-drag selection inside shell mode; the panel is borderless, so the copy
+comes out clean without frame characters.
 
 `s` on a node opens a node shell the way `kubectl debug node` does: it spawns a
 short-lived privileged debug pod pinned to the node, with the host filesystem

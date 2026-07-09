@@ -85,9 +85,15 @@ Two ways to mark and copy log lines:
   extend the range and `y` or `Enter` to copy it to the clipboard (via OSC 52,
   so it works over SSH too). Without marking, `y` copies the cursor line. `esc`
   cancels.
-- Mouse: the logs view releases the mouse, so your terminal's own click-and-drag
-  selection and copy work directly. (Keyboard scrolling still applies; the mouse
-  wheel does not scroll here.)
+- Mouse: click-and-drag over the log lines, then release. The selected lines are
+  copied to the clipboard automatically and a `copied N lines (M chars)` status
+  is shown. The selection stays highlighted after copying; dismiss it with `esc`
+  or by selecting again. Selection is whole-line and copies the full line even
+  when lines are truncated on screen in no-wrap mode. The mouse wheel scrolls the
+  log.
+
+Both paths copy the full, untruncated line text with terminal styling stripped,
+so no box borders or escape codes end up on the clipboard.
 
 To grab the whole buffer at once, press `c` to copy every buffered line to the
 clipboard (the raw lines, so an active filter never hides anything). Press
@@ -98,7 +104,9 @@ flow back in right away.
 
 In shell mode, paste with `Ctrl+Shift+V`. `Ctrl+V` is not a paste shortcut; it is
 sent to the running shell/program. Mouse capture is released in shell mode, so
-your terminal's normal click-and-drag text selection works inside the shell.
+your terminal's normal click-and-drag text selection works inside the shell. The
+shell panel has no side borders, so that selection copies clean text without the
+frame characters.
 
 ## Service port-forward
 

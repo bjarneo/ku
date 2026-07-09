@@ -58,11 +58,12 @@ func newTermView(th Theme) termView {
 	return termView{th: th}
 }
 
-// termDims computes the emulator size from the available body area, reserving
-// space for the panel border and a one-line title.
+// termDims computes the emulator size from the available body area. The panel is
+// borderless on the sides (like the pager), so the screen keeps the full width;
+// height loses the two rules and a one-line title.
 func termDims(width, bodyH int) (cols, rows int) {
-	cols = paneContentWidth(width)
-	rows = paneContentHeight(bodyH) - 1
+	cols = pagerContentWidth(width)
+	rows = pagerContentHeight(bodyH) - 1
 	if cols < 8 {
 		cols = 8
 	}
@@ -112,8 +113,11 @@ func (t termView) View(width, bodyH int) string {
 	titleLine := spread(title, hintR, cols)
 
 	inner := titleLine + "\n" + t.renderScreen()
-	box := th.PaneActive.Width(paneStyleWidth(width)).Height(paneStyleHeight(bodyH)).Render(inner)
-	return lipgloss.Place(width, bodyH, lipgloss.Center, lipgloss.Center, box)
+	// Borderless on the sides with no padding (like the pager), so terminal rows
+	// sit flush-left and a native terminal drag-select copies clean text instead
+	// of the pane's │ border characters.
+	style := th.PaneActive.BorderLeft(false).BorderRight(false).Padding(0, 0)
+	return style.Width(width).Height(bodyH).MaxHeight(bodyH).Render(inner)
 }
 
 // renderScreen renders the emulator's screen, overlaying a block cursor onto
