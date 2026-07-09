@@ -94,10 +94,24 @@ func TestTermCtrlCStaysInShell(t *testing.T) {
 	}
 }
 
-func TestTermViewReleasesMouseForNativeSelection(t *testing.T) {
+func TestMouseCapturedOnlyForShell(t *testing.T) {
 	app := App{overlay: overlayTerm}
 
+	if got := app.mouseMode(); got != tea.MouseModeCellMotion {
+		t.Fatalf("shell mouse mode = %v; want cell motion", got)
+	}
+	app.term.isEdit = true
 	if got := app.mouseMode(); got != tea.MouseModeNone {
-		t.Fatalf("shell mouse mode = %v; want none", got)
+		t.Fatalf("edit mouse mode = %v; want none", got)
+	}
+	app.term.isEdit = false
+	app.term.finished = true
+	if got := app.mouseMode(); got != tea.MouseModeNone {
+		t.Fatalf("finished shell mouse mode = %v; want none", got)
+	}
+	app.term.finished = false
+	app.overlay = overlayNone
+	if got := app.mouseMode(); got != tea.MouseModeNone {
+		t.Fatalf("non-shell mouse mode = %v; want none", got)
 	}
 }

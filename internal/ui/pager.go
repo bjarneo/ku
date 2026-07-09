@@ -41,17 +41,16 @@ type pager struct {
 	re        *regexp.Regexp
 	matched   int // lines currently shown
 
-	// Visual line selection: v (or a mouse drag) enters selection mode with a
-	// movable cursor; m drops the anchor (marking) and further movement extends
-	// the range to copy. While selecting, the view is frozen on a snapshot
-	// (selLines). The wrap mode is left untouched so entering selection never
-	// reflows or scrolls the view; rows map to lines with soft-wrap-aware math.
-	selecting  bool
-	marking    bool
-	selDragged bool // a mouse drag moved after the press, so release should copy
-	selAnchor  int
-	selCursor  int
-	selLines   []string
+	// Visual line selection: v enters selection mode with a movable cursor; m drops
+	// the anchor (marking) and further movement extends the range to copy. While
+	// selecting, the view is frozen on a snapshot (selLines). The wrap mode is left
+	// untouched so entering selection never reflows or scrolls the view; rows map
+	// to lines with soft-wrap-aware math.
+	selecting bool
+	marking   bool
+	selAnchor int
+	selCursor int
+	selLines  []string
 }
 
 func newPager(th Theme) pager {
@@ -106,6 +105,7 @@ func (p *pager) SetContent(s string) { p.SetLines(strings.Split(s, "\n")) }
 // SetLines replaces the buffer with lines and scrolls to the top, applying any
 // active filter.
 func (p *pager) SetLines(lines []string) {
+	p.clearSelection()
 	p.lines = lines
 	p.rebuildContent()
 	p.vp.SetContentLines(p.filtered)
@@ -127,7 +127,7 @@ func (p *pager) storeLine(s string) {
 		p.rebuildContent() // rebuild only when trimming the front
 		return
 	}
-	if p.re != nil && !p.re.MatchString(s) {
+	if p.re != nil && !p.re.MatchString(ansi.Strip(s)) {
 		return // filtered out: nothing changed on screen
 	}
 	p.filtered = append(p.filtered, s)
@@ -219,7 +219,6 @@ func (p *pager) beginSelect() {
 	p.selLines = slices.Clone(p.filtered)
 	p.selecting = true
 	p.follow = false
-	p.selDragged = false
 }
 
 // startSelect enters visual line selection, anchored at the top visible line.
@@ -234,31 +233,6 @@ func (p *pager) startSelect() {
 	p.renderSelection()
 }
 
-// startSelectAt begins a mouse selection anchored at viewport row (0-based from
-// the top of the visible area). The range stays anchored here until release.
-func (p *pager) startSelectAt(row int) {
-	if len(p.filtered) == 0 {
-		return
-	}
-	p.beginSelect()
-	idx := p.lineAtRow(row)
-	p.marking = true // a drag always defines a range from the press point
-	p.selAnchor = idx
-	p.selCursor = idx
-	p.renderSelection() // no scroll: the view stays exactly where it was
-}
-
-// dragSelectTo extends a mouse selection to viewport row, auto-scrolling only
-// when the drag reaches an edge. Marks the selection as dragged so release
-// copies.
-func (p *pager) dragSelectTo(row int) {
-	if !p.selecting {
-		return
-	}
-	p.selDragged = true
-	p.setSelCursor(p.lineAtRow(row))
-}
-
 // mark drops the selection anchor at the cursor; further movement extends the
 // marked range from here.
 func (p *pager) mark() {
@@ -269,10 +243,14 @@ func (p *pager) mark() {
 
 // stopSelect leaves selection and restores the live view.
 func (p *pager) stopSelect() {
+	p.clearSelection()
+	p.syncViewport()
+}
+
+func (p *pager) clearSelection() {
 	p.selecting = false
 	p.marking = false
 	p.selLines = nil
-	p.syncViewport()
 }
 
 func (p *pager) moveSel(d int) { p.setSelCursor(p.selCursor + d) }
@@ -311,23 +289,18 @@ func (p *pager) selRange() (int, int) {
 func (p *pager) selCount() int { lo, hi := p.selRange(); return hi - lo + 1 }
 
 // renderSelection redraws the frozen snapshot with the marked range highlighted.
-// It does not touch the scroll offset, so the view only moves when a caller
-// explicitly asks (keepCursorVisible on move/drag). The highlight respects the
-// current wrap mode: wrapped lines keep their full length so they wrap like the
-// rest, while no-wrap lines are padded to a solid full-width block.
+// It does not touch the scroll offset, so the view only moves when movement calls
+// keepCursorVisible. Selected lines stay full-length so the viewport owns all
+// wrapping and horizontal scrolling.
 func (p *pager) renderSelection() {
 	lo, hi := p.selRange()
-	w := p.visibleWidth()
 	rows := make([]string, len(p.selLines))
 	for i, ln := range p.selLines {
-		switch {
-		case i < lo || i > hi:
+		if i < lo || i > hi {
 			rows[i] = ln
-		case p.vp.SoftWrap:
-			rows[i] = p.th.SelItemSel.Render(ln) // no fixed Width: avoids injected newlines
-		default:
-			rows[i] = p.th.SelItemSel.Width(w).Render(truncate(ln, w))
+			continue
 		}
+		rows[i] = p.th.SelItemSel.Render(ln) // no fixed Width: avoids injected newlines
 	}
 	p.vp.SetContentLines(rows)
 }
@@ -376,7 +349,7 @@ func (p *pager) rebuildContent() {
 	}
 	p.filtered = p.filtered[:0]
 	for _, ln := range p.lines {
-		if p.re.MatchString(ln) {
+		if p.re.MatchString(ansi.Strip(ln)) {
 			p.filtered = append(p.filtered, ln)
 		}
 	}
@@ -384,6 +357,14 @@ func (p *pager) rebuildContent() {
 }
 
 func (p *pager) filterActive() bool { return p.filter.Value() != "" }
+
+func (p *pager) clearFilter() {
+	p.filtering = false
+	p.filter.Blur()
+	p.filter.SetValue("")
+	p.re = nil
+	p.relayout()
+}
 
 func (p *pager) startFilter() {
 	p.filtering = true

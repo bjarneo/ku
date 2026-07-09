@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -237,6 +238,30 @@ func TestConfigViewReRendersOnResize(t *testing.T) {
 	// copyAll returns the plain summary (ANSI stripped).
 	if strings.Contains(c.copyAll(), "\x1b") {
 		t.Fatal("config copyAll must strip ANSI")
+	}
+}
+
+func TestConfigViewResizePreservesScroll(t *testing.T) {
+	c := newConfigView(PickTheme("ansi"))
+	c.setSize(80, 8)
+	data := make(map[string]interface{}, 30)
+	for i := 0; i < 30; i++ {
+		data[fmt.Sprintf("key-%02d", i)] = strings.Repeat("value", 4)
+	}
+	obj := map[string]interface{}{
+		"data": data,
+	}
+	c.setObject(k8s.ResourceInfo{Resource: "configmaps", Kind: "ConfigMap"}, "configmap/app", obj, nil)
+	c.vp.SetYOffset(5)
+	before := c.vp.YOffset()
+	if before == 0 {
+		t.Fatal("precondition failed: config view did not scroll")
+	}
+
+	c.setSize(72, 8)
+
+	if got := c.vp.YOffset(); got != before {
+		t.Fatalf("resize changed YOffset from %d to %d", before, got)
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/bjarneo/ku/internal/k8s"
 )
 
@@ -235,10 +237,6 @@ func TestStartingSelectionDoesNotMoveViewport(t *testing.T) {
 			l.stopSelect()
 
 			l.vp.SetYOffset(before)
-			l.startSelectAt(3) // mouse press entry
-			if got := l.vp.YOffset(); got != before {
-				t.Fatalf("startSelectAt moved the viewport: YOffset %d -> %d", before, got)
-			}
 		})
 	}
 }
@@ -258,6 +256,20 @@ func TestLogSelectionCopiesFullLineWhenNoWrap(t *testing.T) {
 
 	if got := l.copySelection(); got != long {
 		t.Fatalf("no-wrap copy must return the full untruncated line: got %d chars, want %d", len(got), len(long))
+	}
+}
+
+func TestLogSelectionNoWrapHighlightHonorsHorizontalScroll(t *testing.T) {
+	l := newLogView(PickTheme("ansi"))
+	l.setSize(20, 8)
+	l.appendLine(strings.Repeat("a", 25) + "TARGET" + strings.Repeat("b", 25))
+	l.toggleWrap() // no-wrap mode uses horizontal scrolling
+	l.vp.ScrollRight(25)
+
+	l.startSelect()
+
+	if view := ansi.Strip(l.vp.View()); !strings.Contains(view, "TARGET") {
+		t.Fatalf("selection highlight ignored horizontal scroll, view:\n%s", view)
 	}
 }
 
@@ -387,27 +399,22 @@ func TestLogCopyAllKeyCopiesToClipboard(t *testing.T) {
 	}
 }
 
-func TestLogsPaneHasNoSideBordersForCleanCopy(t *testing.T) {
+func TestLogsPaneKeepsSideBorders(t *testing.T) {
 	a := App{theme: PickTheme("ansi")}
-	out := a.renderPagerPane("line one\nline two", 40, 10)
+	out := a.renderPane(a.theme.PaneActive, "line one\nline two", 40, 10)
 	rows := strings.Split(out, "\n")
 	if len(rows) < 3 {
 		t.Fatalf("expected a framed pane, got %d rows", len(rows))
 	}
-	// Top and bottom rules keep the framed look.
+	// The full frame, including side borders, keeps the TUI look.
 	if !strings.Contains(rows[0], "─") || !strings.Contains(rows[len(rows)-1], "─") {
 		t.Fatalf("expected top and bottom rules, got:\n%s", out)
 	}
-	// No row may carry a vertical border: a native terminal drag-select must copy
-	// clean log text, not the pane's │ characters.
-	for i, r := range rows {
-		if strings.Contains(r, "│") {
-			t.Fatalf("row %d has a vertical border, native copy would grab it: %q", i, r)
-		}
+	if !strings.Contains(rows[1], "│") {
+		t.Fatalf("expected side border on content row, got %q", rows[1])
 	}
-	// The content sits flush against the left edge (no padding column).
-	if !strings.HasPrefix(rows[1], "line one") {
-		t.Fatalf("content should be flush-left for clean copy, got %q", rows[1])
+	if !strings.Contains(rows[1], "line one") {
+		t.Fatalf("content row missing text, got %q", rows[1])
 	}
 }
 

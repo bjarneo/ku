@@ -155,11 +155,9 @@ func TestAppSmoke(t *testing.T) {
 	}
 }
 
-// TestLogsScreenRendersFlushLeft renders the whole logs screen and checks that
-// the rows carrying log text have no vertical border, so a native drag-select
-// never grabs a │ character. It also guards against panics in the borderless
-// render path.
-func TestLogsScreenRendersFlushLeft(t *testing.T) {
+// TestLogsScreenKeepsBorders renders the whole logs screen and checks that the
+// rows carrying log text keep the standard TUI frame.
+func TestLogsScreenKeepsBorders(t *testing.T) {
 	th := PickTheme("ansi")
 	app := App{theme: th, client: &k8s.Client{}, gutter: 1, width: 78, height: 22}
 	app.logs = newLogView(th)
@@ -173,9 +171,10 @@ func TestLogsScreenRendersFlushLeft(t *testing.T) {
 	out := app.render() // must not panic
 	for _, ln := range strings.Split(out, "\n") {
 		if strings.Contains(ln, "log line") && strings.Contains(ln, "│") {
-			t.Fatalf("a log row carries a vertical border, native copy would grab it: %q", ln)
+			return
 		}
 	}
+	t.Fatalf("log rows should keep side borders:\n%s", out)
 }
 
 func TestPaneRenderingFitsShortBody(t *testing.T) {

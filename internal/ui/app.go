@@ -15,6 +15,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
 
@@ -50,10 +51,9 @@ const (
 )
 
 const (
-	headerHeight   = 1
-	footerHeight   = 1
-	minSidebar     = 60 // hide the sidebar below this terminal width
-	mouseWheelRows = 3
+	headerHeight = 1
+	footerHeight = 1
+	minSidebar   = 60 // hide the sidebar below this terminal width
 )
 
 // target identifies a single object an action operates on.
@@ -268,9 +268,9 @@ func (a *App) relayout() {
 	} else {
 		a.table.setSize(paneContentWidth(a.width), paneContentHeight(bh))
 	}
-	a.config.setSize(pagerContentWidth(a.width), pagerContentHeight(bh))
-	a.detail.setSize(pagerContentWidth(a.width), pagerContentHeight(bh))
-	a.logs.setSize(pagerContentWidth(a.width), pagerContentHeight(bh))
+	a.config.setSize(paneContentWidth(a.width), paneContentHeight(bh))
+	a.detail.setSize(paneContentWidth(a.width), paneContentHeight(bh))
+	a.logs.setSize(paneContentWidth(a.width), paneContentHeight(bh))
 }
 
 func (a *App) setStatus(text string, isErr bool) {
@@ -324,7 +324,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.pasteTermText(m.Content)
 
 	case tea.MouseMsg:
-		return a.handleMouse(m)
+		return a.handleTermMouse(m)
 
 	case startupReadyMsg:
 		return a.adoptStartup(m)
@@ -571,111 +571,34 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // --- mouse routing ----------------------------------------------------------
 
-func (a App) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if a.overlay != overlayNone {
+func (a App) handleTermMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if a.overlay != overlayTerm || a.term.isEdit || a.term.finished || a.term.em == nil {
 		return a, nil
 	}
 	mouse := msg.Mouse()
-
-	// Pager screens own left-drag selection: press, drag, release copies. Routed
-	// before the bodyMousePos gate so a drag that leaves the pane still ends
-	// cleanly.
-	if a.activePager() != nil {
-		if m, cmd, handled := a.handlePagerMouse(msg, mouse); handled {
-			return m, cmd
-		}
-	}
-
-	x, bodyY, ok := a.bodyMousePos(mouse)
-	if !ok {
+	mouse.X -= 1 + panePaddingX + a.gutter
+	mouse.Y -= headerHeight + 1 + panePaddingY + 1 + a.gutter
+	if mouse.X < 0 || mouse.Y < 0 || mouse.X >= a.term.cols || mouse.Y >= a.term.rows {
 		return a, nil
 	}
-
-	if _, ok := msg.(tea.MouseWheelMsg); ok && (mouse.Button == tea.MouseWheelUp || mouse.Button == tea.MouseWheelDown) {
-		return a.handleMouseWheel(x, bodyY, mouse.Button)
-	}
-	if _, ok := msg.(tea.MouseClickMsg); !ok || mouse.Button != tea.MouseLeft {
-		return a, nil
-	}
-
-	if a.sidebarVisible() {
-		if _, y, ok := a.sidebarMousePos(x, bodyY); ok {
-			a.focus = focusSidebar
-			if e, ok := a.sidebar.selectAt(y); ok {
-				return a.openNavEntry(e)
-			}
-			return a, nil
-		}
-	}
-
-	switch a.screen {
-	case screenTable:
-		return a.handleTableClick(x, bodyY)
-	case screenConfig, screenDetail, screenLogs:
-		if _, _, ok := a.fullPaneMousePos(x, bodyY); ok {
-			a.focus = focusMain
-		}
-	}
+	a.term.em.SendMouse(termMouseEvent(msg, mouse))
 	return a, nil
 }
 
-func (a App) bodyMousePos(msg tea.Mouse) (int, int, bool) {
-	x := msg.X - a.gutter
-	y := msg.Y - a.gutter
-	if x < 0 || y < headerHeight || x >= a.width || y >= a.height-footerHeight {
-		return 0, 0, false
+func termMouseEvent(msg tea.MouseMsg, mouse tea.Mouse) uv.MouseEvent {
+	m := uv.Mouse{X: mouse.X, Y: mouse.Y, Button: mouse.Button, Mod: mouse.Mod}
+	switch msg.(type) {
+	case tea.MouseClickMsg:
+		return uv.MouseClickEvent(m)
+	case tea.MouseReleaseMsg:
+		return uv.MouseReleaseEvent(m)
+	case tea.MouseWheelMsg:
+		return uv.MouseWheelEvent(m)
+	case tea.MouseMotionMsg:
+		return uv.MouseMotionEvent(m)
+	default:
+		return uv.MouseMotionEvent(m)
 	}
-	return x, y - headerHeight, true
-}
-
-func (a App) paneMousePos(outerX, outerW, x, bodyY int) (int, int, bool) {
-	if outerW < 5 || a.bodyH() < 3 {
-		return 0, 0, false
-	}
-	cx := x - (outerX + 1 + panePaddingX)
-	cy := bodyY - (1 + panePaddingY)
-	if cx < 0 || cy < 0 || cx >= paneContentWidth(outerW) || cy >= paneContentHeight(a.bodyH()) {
-		return 0, 0, false
-	}
-	return cx, cy, true
-}
-
-func (a App) sidebarMousePos(x, bodyY int) (int, int, bool) {
-	return a.paneMousePos(0, a.sidebarWidth(), x, bodyY)
-}
-
-func (a App) tableMousePos(x, bodyY int) (int, int, bool) {
-	outerX, outerW := 0, a.width
-	if a.sidebarVisible() {
-		outerX = a.sidebarWidth() + paneGap
-		outerW = a.width - outerX
-	}
-	return a.paneMousePos(outerX, outerW, x, bodyY)
-}
-
-func (a App) fullPaneMousePos(x, bodyY int) (int, int, bool) {
-	return a.paneMousePos(0, a.width, x, bodyY)
-}
-
-func (a App) handleTableClick(x, bodyY int) (tea.Model, tea.Cmd) {
-	if a.table.filtering {
-		return a, nil
-	}
-	cx, cy, ok := a.tableMousePos(x, bodyY)
-	if !ok {
-		return a, nil
-	}
-	a.focus = focusMain
-	if cy == 0 {
-		if ci, ok := a.table.colAt(cx); ok {
-			a.table.setSort(ci)
-		}
-		return a, nil
-	}
-	if row, ok := a.table.rowAt(cy); ok {
-		a.table.setCursor(row)
-	}
-	return a, nil
 }
 
 // activePager returns the pager backing the current screen, or nil when the
@@ -692,70 +615,6 @@ func (a *App) activePager() *pager {
 	return nil
 }
 
-// pagerRowAt maps a mouse position to a 0-based row inside the pager viewport,
-// skipping the top rule and the chrome (title, optional filter line). It reports
-// false when the point is outside the scrollable area.
-func (a App) pagerRowAt(p *pager, mouse tea.Mouse) (int, bool) {
-	_, bodyY, ok := a.bodyMousePos(mouse)
-	if !ok {
-		return 0, false
-	}
-	row := bodyY - 1 - p.chromeLines() // 1 = top rule
-	if row < 0 || row >= p.vp.Height() {
-		return 0, false
-	}
-	return row, true
-}
-
-// handlePagerMouse drives left-drag line selection on any pager screen: press
-// anchors, motion extends and auto-scrolls, release copies the full lines
-// (untruncated, even in no-wrap) to the clipboard and keeps them highlighted.
-// The bool reports whether the event was consumed here; wheel scrolling falls
-// through to the shared handler.
-func (a App) handlePagerMouse(msg tea.MouseMsg, mouse tea.Mouse) (tea.Model, tea.Cmd, bool) {
-	p := a.activePager()
-	if p == nil {
-		return a, nil, false
-	}
-	switch msg.(type) {
-	case tea.MouseClickMsg:
-		row, ok := a.pagerRowAt(p, mouse)
-		if mouse.Button != tea.MouseLeft || !ok {
-			return a, nil, false
-		}
-		a.focus = focusMain
-		p.startSelectAt(row)
-		return a, nil, true
-	case tea.MouseMotionMsg:
-		if !p.selecting || mouse.Button != tea.MouseLeft {
-			return a, nil, false
-		}
-		if row, ok := a.pagerRowAt(p, mouse); ok {
-			p.dragSelectTo(row)
-		}
-		return a, nil, true // keep the drag even when it strays off the pane
-	case tea.MouseReleaseMsg:
-		if !p.selecting || mouse.Button != tea.MouseLeft {
-			return a, nil, false
-		}
-		// A press with no drag is just a click: clear any kept selection.
-		if !p.selDragged {
-			p.stopSelect()
-			return a, nil, true
-		}
-		// Copy on release but keep the range highlighted, so the selection stays
-		// visible. The user dismisses it with esc or by selecting again.
-		text, n := p.copySelection(), p.selCount()
-		p.selDragged = false
-		if text == "" {
-			return a, nil, true
-		}
-		a.setStatus(copyStatus(text, n), false)
-		return a, tea.SetClipboard(text), true
-	}
-	return a, nil, false
-}
-
 // copyStatus is the shared "copied ..." message for log selection copies.
 func copyStatus(text string, lines int) string {
 	unit := "lines"
@@ -763,52 +622,6 @@ func copyStatus(text string, lines int) string {
 		unit = "line"
 	}
 	return fmt.Sprintf("copied %d %s (%d chars) to clipboard", lines, unit, utf8.RuneCountInString(text))
-}
-
-func (a App) handleMouseWheel(x, bodyY int, button tea.MouseButton) (tea.Model, tea.Cmd) {
-	delta := mouseWheelRows
-	if button == tea.MouseWheelUp {
-		delta = -delta
-	}
-	if a.sidebarVisible() {
-		if _, _, ok := a.sidebarMousePos(x, bodyY); ok {
-			a.focus = focusSidebar
-			a.sidebar.move(delta)
-			return a, nil
-		}
-	}
-	switch a.screen {
-	case screenTable:
-		if _, _, ok := a.tableMousePos(x, bodyY); ok && !a.table.filtering {
-			a.focus = focusMain
-			a.table.moveCursor(delta)
-		}
-	case screenConfig:
-		if _, _, ok := a.fullPaneMousePos(x, bodyY); ok {
-			scrollViewport(&a.config.vp, delta)
-		}
-	case screenDetail:
-		if _, _, ok := a.fullPaneMousePos(x, bodyY); ok {
-			scrollViewport(&a.detail.vp, delta)
-		}
-	case screenLogs:
-		if _, _, ok := a.fullPaneMousePos(x, bodyY); ok {
-			a.logs.follow = false
-			scrollViewport(&a.logs.vp, delta)
-		}
-	}
-	return a, nil
-}
-
-func scrollViewport(vp interface {
-	ScrollUp(int)
-	ScrollDown(int)
-}, delta int) {
-	if delta < 0 {
-		vp.ScrollUp(-delta)
-		return
-	}
-	vp.ScrollDown(delta)
 }
 
 // routeAux forwards auxiliary messages (e.g. cursor blink) to the focused input.
@@ -823,8 +636,8 @@ func (a App) routeAux(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.table, cmd = a.table.Update(msg)
 		return a, cmd
 	}
-	if a.screen == screenLogs && a.logs.filtering {
-		cmd := a.logs.update(msg)
+	if p := a.activePager(); p != nil && p.filtering {
+		cmd := p.update(msg)
 		return a, cmd
 	}
 	return a, nil
@@ -833,8 +646,13 @@ func (a App) routeAux(msg tea.Msg) (tea.Model, tea.Cmd) {
 // filterInput reports whether a text filter is capturing keystrokes, so global
 // single-key actions (command, docs) don't fire while the user is typing.
 func (a App) filterInput() bool {
-	return (a.screen == screenTable && a.table.filtering) ||
-		(a.screen == screenLogs && (a.logs.filtering || a.logs.selecting))
+	if a.screen == screenTable && a.table.filtering {
+		return true
+	}
+	if p := a.activePager(); p != nil && (p.filtering || p.selecting) {
+		return true
+	}
+	return false
 }
 
 // --- key routing ------------------------------------------------------------
@@ -1656,7 +1474,7 @@ func (a App) startLogs(ns, pod, container string) (tea.Model, tea.Cmd) {
 	a.logs.streams = 1
 	a.logs.ns, a.logs.pod, a.logs.cont = ns, pod, container
 	a.logs.title = pod + " › " + container
-	a.logs.setSize(pagerContentWidth(a.width), pagerContentHeight(a.bodyH()))
+	a.logs.setSize(paneContentWidth(a.width), paneContentHeight(a.bodyH()))
 
 	ch := make(chan logEvent, 256)
 	a.logs.ch = ch
@@ -1678,7 +1496,7 @@ func (a App) startDeploymentLogs(ns, deployment string, targets []k8s.LogTarget)
 	a.logs.streams = len(targets)
 	a.logs.ns, a.logs.deploy = ns, deployment
 	a.logs.title = "deployment/" + deployment + " › all logs"
-	a.logs.setSize(pagerContentWidth(a.width), pagerContentHeight(a.bodyH()))
+	a.logs.setSize(paneContentWidth(a.width), paneContentHeight(a.bodyH()))
 
 	ch := make(chan logEvent, 256)
 	a.logs.ch = ch
@@ -2504,15 +2322,12 @@ func (a App) View() tea.View {
 }
 
 func (a App) mouseMode() tea.MouseMode {
-	// The embedded terminal keeps keyboard capture but releases the mouse so
-	// native terminal selection works inside the shell.
-	if a.overlay == overlayTerm {
-		return tea.MouseModeNone
+	// ku is keyboard-first. Mouse events are only captured for embedded shell
+	// programs that explicitly enable terminal mouse tracking.
+	if a.overlay == overlayTerm && !a.term.isEdit && !a.term.finished {
+		return tea.MouseModeCellMotion
 	}
-	// Everywhere else (logs included) the app owns the mouse: on the logs screen
-	// a left-drag selects whole lines and copies them in full on release, which
-	// beats native selection that would grab truncated on-screen text.
-	return tea.MouseModeCellMotion
+	return tea.MouseModeNone
 }
 
 func (a App) render() string {
@@ -2575,11 +2390,11 @@ func (a App) splashView() string {
 func (a App) screenBody() string {
 	switch a.screen {
 	case screenConfig:
-		return a.renderPagerPane(a.config.View(), a.width, a.bodyH())
+		return a.renderPane(a.theme.PaneActive, a.config.View(), a.width, a.bodyH())
 	case screenDetail:
-		return a.renderPagerPane(a.detail.View(), a.width, a.bodyH())
+		return a.renderPane(a.theme.PaneActive, a.detail.View(), a.width, a.bodyH())
 	case screenLogs:
-		return a.renderPagerPane(a.logs.View(), a.width, a.bodyH())
+		return a.renderPane(a.theme.PaneActive, a.logs.View(), a.width, a.bodyH())
 	case screenCockpit:
 		return a.cockpitScreen()
 	default:
@@ -2625,23 +2440,6 @@ func (a App) renderPane(style lipgloss.Style, content string, outerW, outerH int
 	}
 	content = clampBlock(content, paneContentWidth(outerW), paneContentHeight(outerH))
 	return style.Width(paneStyleWidth(outerW)).Height(paneStyleHeight(outerH)).MaxHeight(outerH).Render(content)
-}
-
-// renderPagerPane frames a pager screen (logs, YAML detail, config) with top and
-// bottom rules only, no side borders or horizontal padding. That keeps every row
-// flush against the left edge so a native terminal drag-select copies clean text
-// instead of the pane's │ border characters and padding. Content spans the full
-// inner width (see pagerContentWidth); height loses the two rule rows, matching a
-// plain bordered pane's vertical frame.
-func (a App) renderPagerPane(content string, outerW, outerH int) string {
-	if outerW < 5 || outerH < 3 {
-		return clampBlock(content, outerW, outerH)
-	}
-	style := a.theme.PaneActive.
-		BorderLeft(false).BorderRight(false).
-		Padding(0, 0)
-	content = clampBlock(content, pagerContentWidth(outerW), pagerContentHeight(outerH))
-	return style.Width(outerW).Height(outerH).MaxHeight(outerH).Render(content)
 }
 
 func (a App) tableScreen() string {
@@ -2846,7 +2644,7 @@ func (a App) hints() []hint {
 		if !a.readOnly {
 			h = append(h, hint{"e", "edit"})
 		}
-		h = append(h, hint{"/", "filter"}, hint{"drag/v", "select"}, hint{"c", "copy"})
+		h = append(h, hint{"/", "filter"}, hint{"v", "select"}, hint{"c", "copy"})
 		return append(h, editModeHint, hint{"O", "docs"}, hint{"esc", "back"})
 	case screenDetail:
 		h := []hint{{"↑↓", "scroll"}, {"enter", "config"}}
@@ -2862,10 +2660,10 @@ func (a App) hints() []hint {
 		if !a.readOnly {
 			h = append(h, hint{"e", "edit"})
 		}
-		h = append(h, hint{"/", "filter"}, hint{"drag/v", "select"}, hint{"c", "copy"})
+		h = append(h, hint{"/", "filter"}, hint{"v", "select"}, hint{"c", "copy"})
 		return append(h, editModeHint, hint{"O", "docs"}, hint{"esc", "back"})
 	case screenLogs:
-		return []hint{{"↑↓", "scroll"}, {"f", "follow"}, {"/", "filter"}, {"w", "wrap"}, {"drag/v", "select"}, {"c", "copy"}, {"^l", "clear"}, editModeHint, {"O", "docs"}, {"esc", "back"}}
+		return []hint{{"↑↓", "scroll"}, {"f", "follow"}, {"/", "filter"}, {"w", "wrap"}, {"v", "select"}, {"c", "copy"}, {"^l", "clear"}, editModeHint, {"O", "docs"}, {"esc", "back"}}
 	case screenCockpit:
 		if a.focus == focusSidebar {
 			return []hint{{"↑↓", "pick"}, {"enter", "open"}, {"tab", "table"}, {":", "jump"}, editModeHint, {"C", "cmd"}, {"?", "help"}}

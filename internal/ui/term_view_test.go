@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/x/vt"
 )
 
-func TestTermRendersBorderlessForCleanCopy(t *testing.T) {
+func TestTermKeepsPaneBorders(t *testing.T) {
 	tv := newTermView(PickTheme("ansi"))
 	width, bodyH := 60, 16
 	cols, rows := termDims(width, bodyH)
@@ -21,11 +21,10 @@ func TestTermRendersBorderlessForCleanCopy(t *testing.T) {
 	if !strings.Contains(lines[0], "─") {
 		t.Fatalf("expected a top rule for framing, got %q", lines[0])
 	}
-	// No terminal row may carry a vertical border: native selection must copy
-	// clean text, not the pane's │ characters.
-	for i, ln := range lines {
+	for _, ln := range lines {
 		if strings.Contains(ln, "hello world") && strings.Contains(ln, "│") {
-			t.Fatalf("terminal row %d carries a vertical border: %q", i, ln)
+			return
 		}
 	}
+	t.Fatalf("terminal rows should keep side borders:\n%s", out)
 }

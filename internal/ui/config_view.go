@@ -38,9 +38,12 @@ func newConfigView(th Theme) configView {
 }
 
 func (c *configView) setSize(w, h int) {
+	y, x := c.vp.YOffset(), c.vp.XOffset()
 	c.pager.setSize(w, h)
 	if c.hasObj {
 		c.SetContent(renderConfig(c.th, c.res, c.obj, c.vp.Width(), c.usage))
+		c.vp.SetYOffset(y)
+		c.vp.SetXOffset(x)
 	}
 }
 
@@ -48,6 +51,7 @@ func (c *configView) setMessage(title, body string) {
 	c.title = title
 	c.label = "config"
 	c.hasObj = false
+	c.clearFilter()
 	c.SetContent(body)
 }
 
@@ -55,6 +59,7 @@ func (c *configView) setObject(res k8s.ResourceInfo, title string, obj map[strin
 	c.title = title
 	c.label = strings.ToLower(res.Kind) + " config"
 	c.res, c.obj, c.usage, c.hasObj = res, obj, usage, true
+	c.clearFilter()
 	c.SetContent(renderConfig(c.th, res, obj, c.vp.Width(), usage))
 }
 

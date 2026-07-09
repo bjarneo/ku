@@ -16,12 +16,14 @@ func newDetailView(th Theme) detailView {
 // setMessage shows plain (unhighlighted) text such as "loading…" or an error.
 func (d *detailView) setMessage(title, body string) {
 	d.title = title
+	d.clearFilter()
 	d.SetContent(body)
 }
 
 // setYAML renders highlighted YAML.
 func (d *detailView) setYAML(title, yaml string) {
 	d.title = title
+	d.clearFilter()
 	d.SetContent(highlightYAML(yaml, d.th))
 }
 
