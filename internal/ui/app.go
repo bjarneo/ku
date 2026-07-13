@@ -755,6 +755,13 @@ func (a App) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case msg.String() == "enter":
 			a.table.stopFilter(false)
 			return a, nil
+		case msg.String() == "up", msg.String() == "down":
+			// Arrow keys confirm the filter and move in one press. Only the
+			// bare arrows: k/j must stay typeable as filter text.
+			a.table.stopFilter(false)
+			var cmd tea.Cmd
+			a.table, cmd = a.table.Update(msg)
+			return a, cmd
 		default:
 			var cmd tea.Cmd
 			a.table, cmd = a.table.Update(msg)
@@ -948,6 +955,11 @@ func (a *App) handlePagerKeys(p *pager, msg tea.KeyMsg) (tea.Cmd, bool) {
 			p.stopFilter(true)
 		case msg.String() == "enter":
 			p.stopFilter(false)
+		case msg.String() == "up", msg.String() == "down":
+			// Arrow keys confirm the filter and scroll in one press. Only the
+			// bare arrows: k/j must stay typeable as filter text.
+			p.stopFilter(false)
+			return p.update(msg), true
 		default:
 			return p.update(msg), true
 		}

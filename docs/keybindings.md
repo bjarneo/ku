@@ -47,7 +47,7 @@ place, the same as `kubectl drain --ignore-daemonsets`.
 | `:` | jump to any resource (`pods`, `deploy`, `svc`, ...) |
 | `Ctrl+K` | command palette |
 | `Shift+E` | toggle edit mode / read-only mode |
-| `/` | filter the current table (`esc` clears) |
+| `/` | filter the current table (`Enter` or `↑`/`↓` confirms, `esc` clears) |
 | `S` | sort by a column (re-pick to flip direction) |
 | `r` / `Ctrl+r` | refresh now |
 | `w` | toggle wide columns |
@@ -67,7 +67,7 @@ until edit mode is enabled with `Shift+E` or the command palette.
 
 | Context | Keys |
 | --- | --- |
-| Logs | `f` follow, `/` filter (regex), `w` (or `Ctrl+w` while filtering) wrap / truncate lines, `c` copy all, `Ctrl+l` clear, `v` select lines, `g` / `G` top / bottom, `esc` back |
+| Logs | `f` follow, `/` filter (regex, `Enter` or `↑`/`↓` confirms), `w` (or `Ctrl+w` while filtering) wrap / truncate lines, `c` copy all, `Ctrl+l` clear, `v` select lines, `g` / `G` top / bottom, `esc` back |
 | Logs (selecting) | `↑` / `↓` (and `g` / `G`, page keys) move the cursor, `m` mark, `y` / `Enter` copy, `esc` cancel |
 | Config summary | scroll, `d` / `y` YAML, `e` edit, `t` trigger CronJob, `esc` back |
 | Detail (YAML) | scroll, `Enter` config, `e` edit, `t` trigger CronJob, `esc` back |
