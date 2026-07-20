@@ -83,6 +83,74 @@ func TestLogFilterInvalidRegexIsForgiving(t *testing.T) {
 	}
 }
 
+func TestLogContainerPickerMarksPreviousAvailability(t *testing.T) {
+	theme := PickTheme("ansi")
+	app := App{
+		theme:     theme,
+		logTarget: target{ns: "default", name: "api"},
+		sel:       newSelector(theme),
+	}
+	msg := containersMsg{
+		ns:  "default",
+		pod: "api",
+		containers: []k8s.PodContainer{
+			{Name: "init", PreviousAvailable: true},
+			{Name: "app"},
+		},
+	}
+
+	model, _ := app.handleContainers(msg)
+	got := model.(App)
+	if got.overlay != overlaySelector || got.sel.kind != selContainer {
+		t.Fatalf("handleContainers() did not open the logs container picker")
+	}
+	if got.sel.items[0].desc != "previous available" || got.sel.items[1].desc != "" {
+		t.Fatalf("picker descriptions = %#v", got.sel.items)
+	}
+	if !got.logPrevious["init"] || got.logPrevious["app"] {
+		t.Fatalf("previous availability = %#v", got.logPrevious)
+	}
+}
+
+func TestPreviousLogHintsReplaceFollow(t *testing.T) {
+	app := App{screen: screenLogs}
+	app.logs.previousAvailable = true
+
+	currentHints := app.hints()
+	if !hasHint(currentHints, "p", "previous") || !hasHint(currentHints, "f", "follow") {
+		t.Fatalf("current log hints = %#v", currentHints)
+	}
+
+	app.logs.previous = true
+	previousHints := app.hints()
+	if !hasHint(previousHints, "p", "current") {
+		t.Fatalf("previous log hints = %#v; want p current", previousHints)
+	}
+	if hasHint(previousHints, "f", "follow") {
+		t.Fatalf("previous log hints = %#v; follow should be hidden", previousHints)
+	}
+}
+
+func TestPreviousLogErrorIsStoredInBuffer(t *testing.T) {
+	app := App{theme: PickTheme("ansi")}
+	app.logs = newLogView(app.theme)
+	app.logs.previous = true
+
+	app.applyLogEvent(logEvent{err: fmt.Errorf("previous terminated container not found")})
+	if got := app.logs.copyAll(); got != "Error: previous terminated container not found" {
+		t.Fatalf("previous log buffer = %q", got)
+	}
+}
+
+func hasHint(hints []hint, key, desc string) bool {
+	for _, hint := range hints {
+		if hint.key == key && hint.desc == desc {
+			return true
+		}
+	}
+	return false
+}
+
 func TestLogEventDrainsBufferedLinesInOneUpdate(t *testing.T) {
 	app := App{client: &k8s.Client{}, theme: PickTheme("ansi"), width: 80, height: 24, screen: screenLogs}
 	app.logs = newLogView(app.theme)

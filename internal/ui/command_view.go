@@ -127,7 +127,12 @@ func (a App) kubectlLogsCommand() string {
 			args = append(args, "-c", a.logs.cont)
 		}
 	}
-	args = append(args, "--tail", strconv.FormatInt(logTailLines, 10), "-f")
+	args = append(args, "--tail", strconv.FormatInt(logTailLines, 10))
+	if a.logs.previous {
+		args = append(args, "--previous")
+	} else {
+		args = append(args, "-f")
+	}
 	return shellJoin(args)
 }
 

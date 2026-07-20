@@ -53,6 +53,24 @@ func TestKubectlLogsCommand(t *testing.T) {
 	}
 }
 
+func TestKubectlPreviousLogsCommand(t *testing.T) {
+	app := App{
+		client: &k8s.Client{ContextName: "kind-ku-demo"},
+		logs: logView{
+			ns:       "ku-demo",
+			pod:      "frontend-7d9",
+			cont:     "web",
+			previous: true,
+		},
+	}
+
+	got := app.kubectlLogsCommand()
+	want := "kubectl --context kind-ku-demo logs -n ku-demo frontend-7d9 -c web --tail 1000 --previous"
+	if got != want {
+		t.Fatalf("kubectlLogsCommand() = %q; want %q", got, want)
+	}
+}
+
 func TestKubectlDeploymentLogsCommand(t *testing.T) {
 	app := App{
 		client: &k8s.Client{ContextName: "kind-ku-demo"},

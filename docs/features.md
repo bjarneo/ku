@@ -84,12 +84,15 @@ name.
 ## Logs
 
 `l` on a pod streams logs live in an overlay, starting with the last 1000 lines
-(it prompts for the container when there are several). `f` toggles auto-scroll
-so you can read back through history; `g` / `G` jump to top and bottom.
+(it prompts for the container when there are several). Containers with a previous
+terminated instance are marked in the picker. Press `p` in the log view to switch
+between the current and previous instance. Previous logs are a finite 1000-line
+snapshot and do not follow.
 
-Copy with the keyboard via `v` (see keybindings). The full line is copied even
-when truncated on screen, with styling stripped. `/` filters by regex and `w`
-toggles wrap.
+`f` toggles auto-scroll for current logs so you can read back through history;
+`g` / `G` jump to top and bottom. Copy with the keyboard via `v` (see
+keybindings). The full line is copied even when truncated on screen, with styling
+stripped. `/` filters by regex and `w` toggles wrap.
 
 ## Port-forward a Service
 

@@ -67,7 +67,7 @@ until edit mode is enabled with `Shift+E` or the command palette.
 
 | Context | Keys |
 | --- | --- |
-| Logs | `f` follow, `/` filter (regex, `Enter` or `↑`/`↓` confirms), `w` (or `Ctrl+w` while filtering) wrap / truncate lines, `c` copy all, `Ctrl+l` clear, `v` select lines, `g` / `G` top / bottom, `esc` back |
+| Logs | `p` current / previous instance when available, `f` follow current logs, `/` filter (regex, `Enter` or `↑`/`↓` confirms), `w` (or `Ctrl+w` while filtering) wrap / truncate lines, `c` copy all, `Ctrl+l` clear, `v` select lines, `g` / `G` top / bottom, `esc` back |
 | Logs (selecting) | `↑` / `↓` (and `g` / `G`, page keys) move the cursor, `m` mark, `y` / `Enter` copy, `esc` cancel |
 | Config summary | scroll, `d` / `y` YAML, `e` edit, `t` trigger CronJob, `esc` back |
 | Detail (YAML) | scroll, `Enter` config, `e` edit, `t` trigger CronJob, `esc` back |

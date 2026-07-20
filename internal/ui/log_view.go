@@ -11,16 +11,17 @@ import (
 	"github.com/bjarneo/ku/internal/k8s"
 )
 
-// logView streams a pod container's logs into a pager. The stream always follows
-// server-side; the follow flag (on the pager) controls whether new lines
-// auto-scroll to the bottom, so the user can scroll up to read history.
+// logView streams a pod container's logs into a pager. The pager's follow flag
+// controls whether arriving lines auto-scroll to the bottom.
 type logView struct {
 	pager
 
-	ns     string
-	pod    string
-	cont   string
-	deploy string
+	ns                string
+	pod               string
+	cont              string
+	deploy            string
+	previous          bool
+	previousAvailable bool
 
 	session int
 	streams int
@@ -47,7 +48,10 @@ func (l logView) View() string {
 			mode = "nowrap"
 		}
 		state, style := "following", l.th.Good
-		if !l.follow {
+		switch {
+		case l.previous:
+			state, style = "static", l.th.Dim
+		case !l.follow:
 			state, style = "paused", l.th.Warn
 		}
 		right = l.th.Dim.Render(mode) + "  " + style.Render("● "+state)
@@ -58,12 +62,12 @@ func (l logView) View() string {
 // streamLogs opens the log stream and feeds lines onto ch until the context is
 // canceled or the stream ends. It sends a done event unless cancellation already
 // made that event irrelevant.
-func streamLogs(ctx context.Context, cl *k8s.Client, ns, pod, cont, prefix string, session int, ch chan logEvent) {
+func streamLogs(ctx context.Context, cl *k8s.Client, ns, pod, cont, prefix string, follow, previous bool, session int, ch chan logEvent) {
 	defer func() {
 		sendLogEvent(ch, logEvent{session: session, done: true})
 	}()
 
-	rc, err := cl.LogStream(ctx, ns, pod, cont, logTailLines, true)
+	rc, err := cl.LogStream(ctx, ns, pod, cont, logTailLines, follow, previous)
 	if err != nil {
 		sendLogEvent(ch, logEvent{session: session, err: err})
 		return

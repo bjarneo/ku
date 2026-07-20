@@ -64,10 +64,10 @@ type namespacesMsg struct {
 }
 
 type containersMsg struct {
-	ns, pod string
-	names   []string
-	forExec bool // true: open a shell; false: stream logs
-	err     error
+	ns, pod    string
+	containers []k8s.PodContainer
+	forExec    bool // true: open a shell; false: stream logs
+	err        error
 }
 
 type deploymentLogsMsg struct {
@@ -316,8 +316,8 @@ func containersCmd(cl *k8s.Client, ns, pod string, forExec bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := opCtx()
 		defer cancel()
-		names, err := cl.PodContainers(ctx, ns, pod)
-		return containersMsg{ns: ns, pod: pod, names: names, forExec: forExec, err: err}
+		containers, err := cl.PodContainers(ctx, ns, pod)
+		return containersMsg{ns: ns, pod: pod, containers: containers, forExec: forExec, err: err}
 	}
 }
 
