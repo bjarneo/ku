@@ -121,7 +121,7 @@ func TestPreviousLogHintsReplaceFollow(t *testing.T) {
 		t.Fatalf("current log hints = %#v", currentHints)
 	}
 
-	app.logs.previous = true
+	app.logs.mode = k8s.LogPrevious
 	previousHints := app.hints()
 	if !hasHint(previousHints, "p", "current") {
 		t.Fatalf("previous log hints = %#v; want p current", previousHints)
@@ -134,7 +134,7 @@ func TestPreviousLogHintsReplaceFollow(t *testing.T) {
 func TestPreviousLogErrorIsStoredInBuffer(t *testing.T) {
 	app := App{theme: PickTheme("ansi")}
 	app.logs = newLogView(app.theme)
-	app.logs.previous = true
+	app.logs.mode = k8s.LogPrevious
 
 	app.applyLogEvent(logEvent{err: fmt.Errorf("previous terminated container not found")})
 	if got := app.logs.copyAll(); got != "Error: previous terminated container not found" {

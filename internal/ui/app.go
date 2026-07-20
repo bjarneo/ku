@@ -1060,8 +1060,12 @@ func (a App) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.setStatus("cleared logs", false)
 		return a, nil
 	case key.Matches(msg, a.keys.Previous) && a.logs.previousAvailable && a.logs.deploy == "":
-		return a.startPodLogs(a.logs.ns, a.logs.pod, a.logs.cont, true, !a.logs.previous)
-	case key.Matches(msg, a.keys.Follow) && !a.logs.previous:
+		mode := k8s.LogPrevious
+		if a.logs.isPrevious() {
+			mode = k8s.LogCurrent
+		}
+		return a.startPodLogs(a.logs.ns, a.logs.pod, a.logs.cont, true, mode)
+	case key.Matches(msg, a.keys.Follow) && !a.logs.isPrevious():
 		a.logs.follow = !a.logs.follow
 		a.logs.stickToBottom()
 		return a, nil
@@ -1480,7 +1484,7 @@ func (a *App) applyLogEvent(ev logEvent) {
 	case ev.err != nil:
 		message := trimErr(ev.err)
 		a.setStatus("logs: "+message, true)
-		if a.logs.previous {
+		if a.logs.isPrevious() {
 			a.logs.storeLine("Error: " + message)
 		}
 	case ev.done:
@@ -1491,10 +1495,10 @@ func (a *App) applyLogEvent(ev logEvent) {
 }
 
 func (a App) startLogs(ns, pod, container string, previousAvailable bool) (tea.Model, tea.Cmd) {
-	return a.startPodLogs(ns, pod, container, previousAvailable, false)
+	return a.startPodLogs(ns, pod, container, previousAvailable, k8s.LogCurrent)
 }
 
-func (a App) startPodLogs(ns, pod, container string, previousAvailable, previous bool) (tea.Model, tea.Cmd) {
+func (a App) startPodLogs(ns, pod, container string, previousAvailable bool, mode k8s.LogMode) (tea.Model, tea.Cmd) {
 	a.logs.stop()
 	a.clearStatus()
 	a.logSession++
@@ -1505,9 +1509,9 @@ func (a App) startPodLogs(ns, pod, container string, previousAvailable, previous
 	a.logs.streams = 1
 	a.logs.ns, a.logs.pod, a.logs.cont = ns, pod, container
 	a.logs.previousAvailable = previousAvailable
-	a.logs.previous = previous
+	a.logs.mode = mode
 	a.logs.title = pod + " › " + container
-	if previous {
+	if a.logs.isPrevious() {
 		a.logs.title += " (previous)"
 	}
 	a.logs.setSize(paneContentWidth(a.width), paneContentHeight(a.bodyH()))
@@ -1518,7 +1522,7 @@ func (a App) startPodLogs(ns, pod, container string, previousAvailable, previous
 	a.logs.cancel = cancel
 
 	a.screen = screenLogs
-	go streamLogs(ctx, a.client, ns, pod, container, "", !previous, previous, sess, ch)
+	go streamLogs(ctx, a.client, ns, pod, container, "", mode, sess, ch)
 	return a, waitForLog(ch)
 }
 
@@ -1545,7 +1549,7 @@ func (a App) startDeploymentLogs(ns, deployment string, targets []k8s.LogTarget)
 	}
 	for _, t := range targets {
 		prefix := t.Pod + "/" + t.Container
-		go streamLogs(ctx, a.client, t.Namespace, t.Pod, t.Container, prefix, true, false, sess, ch)
+		go streamLogs(ctx, a.client, t.Namespace, t.Pod, t.Container, prefix, k8s.LogCurrent, sess, ch)
 	}
 	return a, waitForLog(ch)
 }
@@ -2701,13 +2705,13 @@ func (a App) hints() []hint {
 	case screenLogs:
 		h := []hint{{"↑↓", "scroll"}}
 		if a.logs.previousAvailable && a.logs.deploy == "" {
-			if a.logs.previous {
+			if a.logs.isPrevious() {
 				h = append(h, hint{"p", "current"})
 			} else {
 				h = append(h, hint{"p", "previous"})
 			}
 		}
-		if !a.logs.previous {
+		if !a.logs.isPrevious() {
 			h = append(h, hint{"f", "follow"})
 		}
 		return append(h, hint{"/", "filter"}, hint{"w", "wrap"}, hint{"v", "select"}, hint{"c", "copy"}, hint{"^l", "clear"}, editModeHint, hint{"O", "docs"}, hint{"esc", "back"})

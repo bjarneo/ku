@@ -20,7 +20,7 @@ type logView struct {
 	pod               string
 	cont              string
 	deploy            string
-	previous          bool
+	mode              k8s.LogMode
 	previousAvailable bool
 
 	session int
@@ -40,6 +40,10 @@ func (l *logView) stop() {
 	}
 }
 
+func (l logView) isPrevious() bool {
+	return l.mode == k8s.LogPrevious
+}
+
 func (l logView) View() string {
 	right, ok := l.selStatus()
 	if !ok {
@@ -49,7 +53,7 @@ func (l logView) View() string {
 		}
 		state, style := "following", l.th.Good
 		switch {
-		case l.previous:
+		case l.isPrevious():
 			state, style = "static", l.th.Dim
 		case !l.follow:
 			state, style = "paused", l.th.Warn
@@ -62,12 +66,12 @@ func (l logView) View() string {
 // streamLogs opens the log stream and feeds lines onto ch until the context is
 // canceled or the stream ends. It sends a done event unless cancellation already
 // made that event irrelevant.
-func streamLogs(ctx context.Context, cl *k8s.Client, ns, pod, cont, prefix string, follow, previous bool, session int, ch chan logEvent) {
+func streamLogs(ctx context.Context, cl *k8s.Client, ns, pod, cont, prefix string, mode k8s.LogMode, session int, ch chan logEvent) {
 	defer func() {
 		sendLogEvent(ch, logEvent{session: session, done: true})
 	}()
 
-	rc, err := cl.LogStream(ctx, ns, pod, cont, logTailLines, follow, previous)
+	rc, err := cl.LogStream(ctx, ns, pod, cont, logTailLines, mode)
 	if err != nil {
 		sendLogEvent(ch, logEvent{session: session, err: err})
 		return

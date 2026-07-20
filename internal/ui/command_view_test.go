@@ -57,10 +57,10 @@ func TestKubectlPreviousLogsCommand(t *testing.T) {
 	app := App{
 		client: &k8s.Client{ContextName: "kind-ku-demo"},
 		logs: logView{
-			ns:       "ku-demo",
-			pod:      "frontend-7d9",
-			cont:     "web",
-			previous: true,
+			ns:   "ku-demo",
+			pod:  "frontend-7d9",
+			cont: "web",
+			mode: k8s.LogPrevious,
 		},
 	}
 

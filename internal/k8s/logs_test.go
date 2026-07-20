@@ -54,13 +54,27 @@ func TestPodContainersMarksPreviousInstances(t *testing.T) {
 	}
 }
 
-func TestPodLogOptionsPreviousSnapshot(t *testing.T) {
-	opts := podLogOptions("app", 1000, false, true)
-	if opts.Container != "app" || opts.Follow || !opts.Previous {
-		t.Fatalf("podLogOptions() = %#v", opts)
+func TestPodLogOptionsModes(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     LogMode
+		follow   bool
+		previous bool
+	}{
+		{name: "current follows", mode: LogCurrent, follow: true},
+		{name: "previous is finite", mode: LogPrevious, previous: true},
 	}
-	if opts.TailLines == nil || *opts.TailLines != 1000 {
-		t.Fatalf("podLogOptions() tail = %v, want 1000", opts.TailLines)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := podLogOptions("app", 1000, tt.mode)
+			if opts.Container != "app" || opts.Follow != tt.follow || opts.Previous != tt.previous {
+				t.Fatalf("podLogOptions() = %#v", opts)
+			}
+			if opts.TailLines == nil || *opts.TailLines != 1000 {
+				t.Fatalf("podLogOptions() tail = %v, want 1000", opts.TailLines)
+			}
+		})
 	}
 }
 

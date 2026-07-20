@@ -17,6 +17,14 @@ type LogTarget struct {
 	Container string
 }
 
+// LogMode selects the current live container or its finite previous instance.
+type LogMode int
+
+const (
+	LogCurrent LogMode = iota
+	LogPrevious
+)
+
 // PodContainer describes one container available for logs or exec.
 type PodContainer struct {
 	Name              string
@@ -100,17 +108,18 @@ func hasPreviousInstance(status corev1.ContainerStatus) bool {
 	return status.RestartCount > 0 && status.LastTerminationState.Terminated != nil
 }
 
-// LogStream opens a log stream for a pod container. When follow is true the
-// caller must close the returned reader (and/or cancel ctx) to stop it.
-func (c *Client) LogStream(ctx context.Context, namespace, pod, container string, tail int64, follow, previous bool) (io.ReadCloser, error) {
-	opts := podLogOptions(container, tail, follow, previous)
+// LogStream opens logs for the selected container instance. Current logs follow
+// until the caller closes the reader or cancels ctx; previous logs are finite.
+func (c *Client) LogStream(ctx context.Context, namespace, pod, container string, tail int64, mode LogMode) (io.ReadCloser, error) {
+	opts := podLogOptions(container, tail, mode)
 	return c.clientset.CoreV1().Pods(namespace).GetLogs(pod, opts).Stream(ctx)
 }
 
-func podLogOptions(container string, tail int64, follow, previous bool) *corev1.PodLogOptions {
+func podLogOptions(container string, tail int64, mode LogMode) *corev1.PodLogOptions {
+	previous := mode == LogPrevious
 	opts := &corev1.PodLogOptions{
 		Container: container,
-		Follow:    follow,
+		Follow:    !previous,
 		Previous:  previous,
 	}
 	if tail >= 0 {
