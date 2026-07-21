@@ -22,6 +22,7 @@ can run any of these and jump to any resource.
 | `Enter` | config summary |
 | `d` / `y` | YAML |
 | `l` | logs (pods); `f` toggles follow |
+| `N` | jump to the pod's node |
 | `e` | edit in `$EDITOR`, then confirm apply |
 | `s` | shell into a pod, node shell on a node, or scale a workload |
 | `p` | port-forward a Service |
@@ -32,9 +33,12 @@ can run any of these and jump to any resource.
 | `x` / `Delete` | delete (with confirm) |
 | `O` | open Kubernetes docs for the current resource, when known |
 
-The bottom bar adapts to the selected resource: pods show logs and shell,
-Services show port-forward, nodes show node shell, cordon, and drain, workloads
-show scale and restart, and CronJobs show trigger.
+The bottom bar adapts to the selected resource: pods show logs, node, and
+shell, Services show port-forward, nodes show node shell, cordon, and drain,
+workloads show scale and restart, and CronJobs show trigger.
+
+`N` on a pod switches to the nodes view with the pod's node selected. It works
+in read-only mode; unscheduled pods show a status message instead.
 
 Draining cordons the node, then evicts its pods through the eviction API so
 PodDisruptionBudgets are honored. DaemonSet and static (mirror) pods are left in

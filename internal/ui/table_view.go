@@ -194,6 +194,18 @@ func (v *tableView) selected() (k8s.Row, bool) {
 
 func (v *tableView) count() int { return len(v.rows) }
 
+// rowCell returns the row's value for the named column (case-insensitive), or
+// "" when the column is absent. Wide (priority > 0) columns are always present
+// in the row's cells even when hidden from display.
+func (v *tableView) rowCell(row k8s.Row, col string) string {
+	for i, c := range v.cols {
+		if strings.EqualFold(c.Name, col) {
+			return cell(row.Cells, i)
+		}
+	}
+	return ""
+}
+
 // visibleCols returns the indices of columns shown given the wide toggle.
 func (v *tableView) visibleCols() []int {
 	idx := make([]int, 0, len(v.cols))

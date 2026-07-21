@@ -94,6 +94,12 @@ snapshot and do not follow.
 keybindings). The full line is copied even when truncated on screen, with styling
 stripped. `/` filters by regex and `w` toggles wrap.
 
+## Jump to a pod's node
+
+`N` on a pod switches to the nodes view with the pod's node already selected,
+so you can check its capacity, pressure, and the rest of its pods without
+hunting for it. Navigation only, so it works in read-only mode.
+
 ## Port-forward a Service
 
 `p` on a Service opens a Service port picker in edit mode. Choose a listed port,

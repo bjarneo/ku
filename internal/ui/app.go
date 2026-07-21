@@ -63,6 +63,13 @@ type target struct {
 	name string
 }
 
+// rowRef names a table row by namespace and name. An empty namespace matches
+// on name alone (cluster-scoped resources).
+type rowRef struct {
+	ns   string
+	name string
+}
+
 // App is the root Bubble Tea model.
 type App struct {
 	client *k8s.Client
@@ -117,6 +124,7 @@ type App struct {
 	logTarget         target
 	logPrevious       map[string]bool
 	execTarget        target
+	pendingSelect     rowRef // row to highlight after the next successful table load
 	portForwardTarget target
 	portForwardPorts  []k8s.ServicePort
 	portForwards      []portForward
@@ -383,6 +391,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.setStatus(trimErr(m.err), true)
 			} else {
 				a.table.setData(m.tbl)
+				if a.pendingSelect.name != "" {
+					a.table.selectRow(a.pendingSelect.ns, a.pendingSelect.name)
+					a.pendingSelect = rowRef{}
+				}
 				a.clearStatus()
 			}
 		}
@@ -878,6 +890,8 @@ func (a App) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.openLogs()
 	case key.Matches(msg, a.keys.DeployLogs):
 		return a.openDeploymentLogs()
+	case key.Matches(msg, a.keys.Node):
+		return a.gotoPodNode()
 	case key.Matches(msg, a.keys.PortForward):
 		return a.openServicePortForward()
 	case key.Matches(msg, a.keys.Edit):
@@ -1192,6 +1206,7 @@ func (a *App) useResource(ri k8s.ResourceInfo) {
 	a.res = ri
 	a.screen = screenTable
 	a.focus = focusMain
+	a.pendingSelect = rowRef{}
 	a.sidebar.syncTo(ri.Key())
 	a.table.stopFilter(true)
 	a.table.resetSort()    // columns differ per resource
@@ -1316,6 +1331,42 @@ func (a App) openLogs() (tea.Model, tea.Cmd) {
 	a.logPrevious = nil
 	a.lookupSeq++
 	return a, containersCmd(a.client, a.lookupSeq, a.screen, row.Namespace, row.Name, false)
+}
+
+// gotoPodNode jumps from a pod to the nodes view with the pod's node selected.
+// Navigation only, so it needs no write access; it is off in developer mode,
+// where nodes are out of scope.
+func (a App) gotoPodNode() (tea.Model, tea.Cmd) {
+	if !a.res.IsPod() {
+		a.setStatus("node: switch to pods first", true)
+		return a, nil
+	}
+	if a.dev {
+		a.setStatus("node: disabled in developer mode", true)
+		return a, nil
+	}
+	row, ok := a.table.selected()
+	if !ok {
+		return a, nil
+	}
+	node := a.table.rowCell(row, "Node")
+	if node == "" || node == "<none>" {
+		a.setStatus("node: pod "+row.Name+" is not scheduled yet", true)
+		return a, nil
+	}
+	ri, ok := a.client.Registry().Resolve("nodes")
+	if !ok {
+		a.setStatus("node: nodes view unavailable", true)
+		return a, nil
+	}
+	return a.jumpToRow(ri, "", node)
+}
+
+// jumpToRow switches to a resource and highlights one row once it loads.
+func (a App) jumpToRow(ri k8s.ResourceInfo, ns, name string) (tea.Model, tea.Cmd) {
+	a.useResource(ri)
+	a.pendingSelect = rowRef{ns: ns, name: name} // after useResource, which clears it
+	return a.reload()
 }
 
 func (a App) openDeploymentLogs() (tea.Model, tea.Cmd) {
@@ -2087,6 +2138,9 @@ func (a App) openPalette() (tea.Model, tea.Cmd) {
 		}
 		if a.res.IsPod() {
 			items = append(items, selItem{title: "Logs", desc: "l", id: "act:logs"})
+			if !a.dev {
+				items = append(items, selItem{title: "Go to pod's node", desc: "N", id: "act:node"})
+			}
 			if writes {
 				items = append(items, selItem{title: "Shell into pod", desc: "s", id: "act:shell"})
 			}
@@ -2317,6 +2371,8 @@ func (a App) applyPalette(id string) (tea.Model, tea.Cmd) {
 		return a.openDelete()
 	case "act:logs":
 		return a.openLogs()
+	case "act:node":
+		return a.gotoPodNode()
 	case "act:deploylogs":
 		return a.openDeploymentLogs()
 	case "act:shell":
@@ -2759,6 +2815,9 @@ func (a App) hints() []hint {
 	switch {
 	case a.res.IsPod():
 		h = append(h, hint{"l", "logs"})
+		if !a.dev {
+			h = append(h, hint{"N", "node"})
+		}
 		if writes {
 			h = append(h, hint{"s", "shell"})
 		}
