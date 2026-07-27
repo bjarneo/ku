@@ -100,6 +100,16 @@ stripped. `/` filters by regex and `w` toggles wrap.
 so you can check its capacity, pressure, and the rest of its pods without
 hunting for it. Navigation only, so it works in read-only mode.
 
+## List the pods on a node
+
+`P` on a node switches to the pods view showing only that node's pods, across
+all namespaces. The list is narrowed server-side with a `spec.nodeName` field
+selector (the same query as `kubectl get pods -A --field-selector
+spec.nodeName=<node>`), and the header shows a `node` chip while the scope is
+active. Press `esc` to drop the scope and see all pods again; switching
+resource or context also clears it. Navigation only, so it works in read-only
+mode.
+
 ## Port-forward a Service
 
 `p` on a Service opens a Service port picker in edit mode. Choose a listed port,

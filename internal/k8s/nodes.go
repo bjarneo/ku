@@ -51,6 +51,12 @@ type DrainResult struct {
 // PodDisruptionBudget rejects, before trying again.
 const evictRetry = 2 * time.Second
 
+// PodsOnNodeSelector returns the field selector matching the pods scheduled on
+// a node.
+func PodsOnNodeSelector(node string) string {
+	return "spec.nodeName=" + node
+}
+
 // Drain cordons a node and evicts its pods, mirroring `kubectl drain
 // --ignore-daemonsets`. DaemonSet-managed and mirror (static) pods are left in
 // place since they cannot be meaningfully evicted; already-finished pods are
@@ -63,7 +69,7 @@ func (c *Client) Drain(ctx context.Context, name string) (DrainResult, error) {
 		return res, fmt.Errorf("cordon: %w", err)
 	}
 	pods, err := c.clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
-		FieldSelector: "spec.nodeName=" + name,
+		FieldSelector: PodsOnNodeSelector(name),
 	})
 	if err != nil {
 		return res, fmt.Errorf("list pods: %w", err)

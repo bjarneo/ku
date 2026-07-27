@@ -111,7 +111,7 @@ func check(ctxName, kubeconfig, ns, resQuery string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	tbl, err := cl.ListTable(ctx, ri, ns)
+	tbl, err := cl.ListTable(ctx, ri, ns, "")
 	if err != nil {
 		return err
 	}

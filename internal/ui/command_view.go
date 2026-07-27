@@ -101,6 +101,9 @@ func (a App) kubectlBaseArgs() []string {
 func (a App) kubectlGetTableCommand() string {
 	args := append(a.kubectlBaseArgs(), "get", kubectlResource(a.res))
 	args = append(args, kubectlNamespaceArgs(a.res, a.namespace)...)
+	if sel := a.scopeSelector(); sel != "" {
+		args = append(args, "--field-selector", sel)
+	}
 	if a.table.showWide {
 		args = append(args, "-o", "wide")
 	}

@@ -125,6 +125,7 @@ type App struct {
 	logPrevious       map[string]bool
 	execTarget        target
 	pendingSelect     rowRef // row to highlight after the next successful table load
+	nodeScope         string // non-empty: the pods list is scoped to this node's pods
 	portForwardTarget target
 	portForwardPorts  []k8s.ServicePort
 	portForwards      []portForward
@@ -249,7 +250,7 @@ func (a App) loadCmd() tea.Cmd {
 	if a.screen == screenCockpit {
 		return loadCockpitCmd(a.client, a.loadSeq)
 	}
-	return loadResourceCmd(a.client, a.loadSeq, a.res, a.namespace)
+	return loadResourceCmd(a.client, a.loadSeq, a.res, a.namespace, a.scopeSelector())
 }
 
 func (a App) bodyH() int {
@@ -360,7 +361,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case a.screen == screenTable && a.overlay == overlayNone && !a.loading:
 			a.loading = true
 			a.loadSeq++
-			cmds = append(cmds, loadResourceCmd(a.client, a.loadSeq, a.res, a.namespace), a.spin.Tick)
+			cmds = append(cmds, loadResourceCmd(a.client, a.loadSeq, a.res, a.namespace, a.scopeSelector()), a.spin.Tick)
 		case a.screen == screenCockpit && a.overlay == overlayNone && !a.loading &&
 			time.Time(m).Sub(a.cockpitAt) >= 5*time.Second:
 			// The cockpit aggregates many lists, so refresh it less often.
@@ -788,10 +789,17 @@ func (a App) updateTable(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.stopPortForwards()
 		return a, tea.Quit
 	case key.Matches(msg, a.keys.Back):
-		// esc clears an applied filter; otherwise it is a no-op on the table.
+		// esc clears an applied filter, then an active node scope; otherwise it
+		// is a no-op on the table.
 		if a.table.filterActive() {
 			a.table.stopFilter(true)
 			a.setStatus("filter cleared", false)
+			return a, nil
+		}
+		if a.nodeScope != "" {
+			a.nodeScope = ""
+			a.setStatus("showing all pods", false)
+			return a.reload()
 		}
 		return a, nil
 	case key.Matches(msg, a.keys.Help):
@@ -892,6 +900,8 @@ func (a App) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.openDeploymentLogs()
 	case key.Matches(msg, a.keys.Node):
 		return a.gotoPodNode()
+	case key.Matches(msg, a.keys.NodePods):
+		return a.gotoNodePods()
 	case key.Matches(msg, a.keys.PortForward):
 		return a.openServicePortForward()
 	case key.Matches(msg, a.keys.Edit):
@@ -1193,7 +1203,7 @@ func (a App) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a App) reload() (tea.Model, tea.Cmd) {
 	a.loading = true
 	a.loadSeq++
-	return a, tea.Batch(loadResourceCmd(a.client, a.loadSeq, a.res, a.namespace), a.spin.Tick)
+	return a, tea.Batch(loadResourceCmd(a.client, a.loadSeq, a.res, a.namespace, a.scopeSelector()), a.spin.Tick)
 }
 
 func (a App) switchResource(ri k8s.ResourceInfo) (tea.Model, tea.Cmd) {
@@ -1207,6 +1217,7 @@ func (a *App) useResource(ri k8s.ResourceInfo) {
 	a.screen = screenTable
 	a.focus = focusMain
 	a.pendingSelect = rowRef{}
+	a.nodeScope = ""
 	a.sidebar.syncTo(ri.Key())
 	a.table.stopFilter(true)
 	a.table.resetSort()    // columns differ per resource
@@ -1367,6 +1378,48 @@ func (a App) jumpToRow(ri k8s.ResourceInfo, ns, name string) (tea.Model, tea.Cmd
 	a.useResource(ri)
 	a.pendingSelect = rowRef{ns: ns, name: name} // after useResource, which clears it
 	return a.reload()
+}
+
+// gotoNodePods jumps from a node to the pods view scoped to the pods running
+// on it. Navigation only, so it needs no write access.
+func (a App) gotoNodePods() (tea.Model, tea.Cmd) {
+	if !a.res.IsNodes() {
+		a.setStatus("pods: switch to nodes first", true)
+		return a, nil
+	}
+	row, ok := a.table.selected()
+	if !ok {
+		return a, nil
+	}
+	ri, ok := a.client.Registry().Resolve("pods")
+	if !ok {
+		a.setStatus("pods: pods view unavailable", true)
+		return a, nil
+	}
+	return a.scopeToNodePods(ri, row.Name)
+}
+
+// scopeToNodePods switches to the pods view narrowed to one node's pods.
+func (a App) scopeToNodePods(ri k8s.ResourceInfo, node string) (tea.Model, tea.Cmd) {
+	a.useResource(ri)
+	// A node's pods span every namespace, so widen the list cluster-wide.
+	// Not persisted: the change is a navigation side effect, not a namespace
+	// choice like the all-namespaces toggle; `a` flips back.
+	if a.namespace != "" {
+		a.lastNS = a.namespace
+		a.namespace = ""
+	}
+	a.nodeScope = node // after useResource, which clears it
+	return a.reload()
+}
+
+// scopeSelector returns the server-side field selector for the current view
+// scope: the selected node's pods while the node scope is active.
+func (a App) scopeSelector() string {
+	if a.nodeScope != "" && a.res.IsPod() {
+		return k8s.PodsOnNodeSelector(a.nodeScope)
+	}
+	return ""
 }
 
 func (a App) openDeploymentLogs() (tea.Model, tea.Cmd) {
@@ -2092,6 +2145,7 @@ func (a App) adoptClient(cl *k8s.Client) (tea.Model, tea.Cmd) {
 	if a.lastNS == "" {
 		a.lastNS = "default"
 	}
+	a.nodeScope = "" // node names are cluster-specific
 	// Land on the cluster overview after a switch, the same fresh start as a cold
 	// launch, rather than carrying the old screen into a different cluster.
 	a.screen = screenCockpit
@@ -2150,6 +2204,9 @@ func (a App) openPalette() (tea.Model, tea.Cmd) {
 		}
 		if a.res.IsDeployment() {
 			items = append(items, selItem{title: "Follow deployment logs", desc: "L", id: "act:deploylogs"})
+		}
+		if a.res.IsNodes() {
+			items = append(items, selItem{title: "Pods on node", desc: "P", id: "act:nodepods"})
 		}
 		if nodeOps && a.res.IsNodes() {
 			items = append(items,
@@ -2373,6 +2430,8 @@ func (a App) applyPalette(id string) (tea.Model, tea.Cmd) {
 		return a.openLogs()
 	case "act:node":
 		return a.gotoPodNode()
+	case "act:nodepods":
+		return a.gotoNodePods()
 	case "act:deploylogs":
 		return a.openDeploymentLogs()
 	case "act:shell":
@@ -2609,6 +2668,11 @@ func (a App) headerView() string {
 	if n := len(a.portForwards); n > 0 {
 		chips = append(chips, chip("pf", itoa(n)))
 	}
+	// Surface an active node scope so a narrowed list never looks like the
+	// whole set.
+	if a.nodeScope != "" && a.screen != screenCockpit {
+		chips = append(chips, th.HeaderKey.Render("node ")+th.Warn.Render(truncate(a.nodeScope, 24)))
+	}
 	// Surface an applied filter so a narrowed list never looks like the whole set.
 	if a.table.filterActive() && !a.table.filtering {
 		chips = append(chips, th.HeaderKey.Render("filter ")+th.Warn.Render("/"+truncate(a.table.filterValue(), 24)))
@@ -2828,6 +2892,7 @@ func (a App) hints() []hint {
 			h = append(h, hint{"p", "port-forward"})
 		}
 	case a.res.IsNodes():
+		h = append(h, hint{"P", "pods"})
 		if nodeOps {
 			h = append(h, hint{"s", "node shell"}, hint{"K", "cordon"}, hint{"D", "drain"})
 		}

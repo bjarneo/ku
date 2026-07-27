@@ -32,6 +32,7 @@ type keyMap struct {
 	Docs        key.Binding
 	DeployLogs  key.Binding
 	Node        key.Binding
+	NodePods    key.Binding
 
 	// views / navigation
 	Focus     key.Binding
@@ -90,6 +91,7 @@ func defaultKeys() keyMap {
 		Docs:        key.NewBinding(key.WithKeys("O"), key.WithHelp("O", "open docs")),
 		DeployLogs:  key.NewBinding(key.WithKeys("L"), key.WithHelp("L", "deployment logs")),
 		Node:        key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "pod's node")),
+		NodePods:    key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "node's pods")),
 
 		Focus:     key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab ←→", "switch pane")),
 		Filter:    key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
@@ -128,7 +130,7 @@ type helpGroup struct {
 func (k keyMap) groups() []helpGroup {
 	return []helpGroup{
 		{"Navigation", []key.Binding{k.Up, k.Down, k.HalfUp, k.HalfDown, k.PageUp, k.PageDown, k.Top, k.Bottom, k.HScroll}},
-		{"Actions", []key.Binding{k.Enter, k.Describe, k.YAML, k.Logs, k.DeployLogs, k.Node, k.Edit, k.Shell, k.PortForward, k.Restart, k.Trigger, k.Delete, k.Cordon, k.Drain, k.Docs}},
+		{"Actions", []key.Binding{k.Enter, k.Describe, k.YAML, k.Logs, k.DeployLogs, k.Node, k.NodePods, k.Edit, k.Shell, k.PortForward, k.Restart, k.Trigger, k.Delete, k.Cordon, k.Drain, k.Docs}},
 		{"Views", []key.Binding{k.Focus, k.Jump, k.Palette, k.EditMode, k.Filter, k.Sort, k.Refresh, k.Wide, k.Command}},
 		{"Cluster", []key.Binding{k.Namespace, k.AllNS, k.Context}},
 		{"Logs", []key.Binding{k.Follow, k.Previous, k.Filter, k.Wrap, k.Select, k.Mark, k.Copy, k.CopyAll, k.Clear}},

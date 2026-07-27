@@ -55,8 +55,9 @@ func (c *Client) restClientFor(gv schema.GroupVersion) (rest.Interface, error) {
 
 // ListTable fetches a resource list as a server-printed table. When namespace
 // is "" and the resource is namespaced, it lists across all namespaces and
-// prepends a NAMESPACE column.
-func (c *Client) ListTable(ctx context.Context, res ResourceInfo, namespace string) (*Table, error) {
+// prepends a NAMESPACE column. A non-empty fieldSelector narrows the list
+// server-side (e.g. spec.nodeName=x for the pods on one node).
+func (c *Client) ListTable(ctx context.Context, res ResourceInfo, namespace, fieldSelector string) (*Table, error) {
 	gv := schema.GroupVersion{Group: res.Group, Version: res.Version}
 	rc, err := c.restClientFor(gv)
 	if err != nil {
@@ -69,6 +70,9 @@ func (c *Client) ListTable(ctx context.Context, res ResourceInfo, namespace stri
 		Param("includeObject", "Metadata")
 	if res.Namespaced && namespace != "" {
 		req = req.Namespace(namespace)
+	}
+	if fieldSelector != "" {
+		req = req.Param("fieldSelector", fieldSelector)
 	}
 
 	raw, err := req.Do(ctx).Raw()
