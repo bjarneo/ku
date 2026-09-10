@@ -92,11 +92,11 @@ place; the choice is remembered for the next launch, unless `--theme` or
 
 ## Configuration
 
-ku reads optional sidebar config from `~/.config/ku/config.yaml`. Use
-`ku config init` to seed a starter file, then restart the TUI after edits.
+ku reads optional sidebar and plugin config from `~/.config/ku/config.yaml`.
+Use `ku config init` to seed a starter file, then restart the TUI after edits.
 
 See [Configuration](configuration.md) for file paths, sidebar examples,
-resource names, and opt-in resources.
+resource names, opt-in resources, and plugin shortcuts.
 
 ## Session memory
 

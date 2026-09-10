@@ -13,7 +13,8 @@ type helpView struct {
 	th     Theme
 	keys   keyMap
 	offset int
-	note   string // optional one-line mode summary shown under the title
+	note   string      // optional one-line mode summary shown under the title
+	extra  []helpGroup // config-defined groups (plugins) appended after the built-ins
 }
 
 func newHelpView(th Theme, keys keyMap) helpView {
@@ -52,7 +53,7 @@ func (h helpView) View(width, height int) string {
 	if h.offset < 0 {
 		h.offset = 0
 	}
-	groups := h.keys.groups()
+	groups := append(h.keys.groups(), h.extra...)
 	colW := 26
 	if w := width - 6; w < colW {
 		colW = w

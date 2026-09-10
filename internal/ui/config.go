@@ -11,10 +11,11 @@ import (
 
 // Config is the user-authored configuration file (distinct from the auto-saved
 // state.json). It is read once at startup and never written by the running TUI;
-// only the user edits it, or `ku config init` seeds it. The first supported key
-// is the sidebar menu; the struct leaves room for more keys later.
+// only the user edits it, or `ku config init` seeds it. It holds the sidebar
+// menu and the plugin shortcuts; the struct leaves room for more keys later.
 type Config struct {
 	Sidebar []SidebarSection `yaml:"sidebar,omitempty"`
+	Plugins []PluginConfig   `yaml:"plugins,omitempty"`
 }
 
 // SidebarSection is one labeled group in the left nav (e.g. "Workloads").
@@ -29,6 +30,21 @@ type SidebarSection struct {
 type SidebarItem struct {
 	Label    string `yaml:"label"`
 	Resource string `yaml:"resource"`
+}
+
+// PluginConfig is one user-defined shortcut that runs an external command with
+// the selected row's coordinates, in the spirit of k9s plugins. Scopes accept
+// the same resource strings as sidebar items plus the literal "all". Args may
+// reference $NAMESPACE, $NAME, $CONTEXT, $CLUSTER, $RESOURCE and $KUBECONFIG;
+// the same values are exported to the command's environment.
+type PluginConfig struct {
+	Key        string   `yaml:"key"`
+	Desc       string   `yaml:"desc"`
+	Scopes     []string `yaml:"scopes"`
+	Command    string   `yaml:"command"`
+	Args       []string `yaml:"args,omitempty"`
+	Background bool     `yaml:"background,omitempty"`
+	Confirm    bool     `yaml:"confirm,omitempty"`
 }
 
 func kuConfigFile(name string) (string, error) {
@@ -135,6 +151,16 @@ const optInExamples = `
 #   - { label: HPAs, resource: horizontalpodautoscalers }
 #   - { label: ScaledObjects, resource: scaledobjects }   # KEDA
 #   - { label: OtelCollectors, resource: opentelemetrycollectors }
+#
+# Plugins: a key on the table runs a command with the selected row. Args may
+# use $NAMESPACE, $NAME, $CONTEXT, $CLUSTER and $RESOURCE.
+# plugins:
+#   - key: ctrl+o
+#     desc: open in browser
+#     scopes: [pods, deployments]
+#     command: open
+#     args: ["https://example.invalid/$NAMESPACE/$RESOURCE/$NAME"]
+#     background: true
 `
 
 // WriteDefaultConfig seeds the config file with the built-in defaults plus a

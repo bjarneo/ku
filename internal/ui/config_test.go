@@ -112,4 +112,28 @@ func TestOptInExamplesAreInertComments(t *testing.T) {
 	if got := cfg.sidebarCatalog(); !reflect.DeepEqual(got, defaultNavCatalog()) {
 		t.Fatalf("commented examples leaked into parsed config:\n%+v", got)
 	}
+	if len(cfg.Plugins) != 0 {
+		t.Fatalf("commented plugin example leaked into parsed config: %+v", cfg.Plugins)
+	}
+	if strings.Contains(string(b), "plugins:") {
+		t.Fatalf("defaults must not serialize an empty plugins key:\n%s", b)
+	}
+}
+
+func TestPluginConfigParses(t *testing.T) {
+	cfg := parseConfig(t, `
+plugins:
+  - key: ctrl+o
+    desc: Workflow job
+    scopes: [pods]
+    command: open-job
+    args: ["$NAMESPACE", "$NAME"]
+    background: true
+    confirm: true
+`)
+	want := []PluginConfig{{Key: "ctrl+o", Desc: "Workflow job", Scopes: []string{"pods"}, Command: "open-job",
+		Args: []string{"$NAMESPACE", "$NAME"}, Background: true, Confirm: true}}
+	if !reflect.DeepEqual(cfg.Plugins, want) {
+		t.Fatalf("plugins = %+v; want %+v", cfg.Plugins, want)
+	}
 }
