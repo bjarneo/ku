@@ -8,8 +8,9 @@ import (
 // cellLess orders two table cells. Duration-shaped values ("2m59s", "5d")
 // compare by elapsed time, numeric-looking values (CPU "245m", MEM "1234Mi",
 // percentages, restart counts, ready ratios) compare numerically, and
-// everything else compares case-insensitively. Unparseable/empty cells sort
-// after numeric ones.
+// everything else compares naturally: case-insensitive, with embedded digit
+// runs compared by value so "node-2" sorts before "node-10". Unparseable/empty
+// cells sort after numeric ones.
 func cellLess(a, b string) bool {
 	av, aok := sortVal(a)
 	bv, bok := sortVal(b)
@@ -22,7 +23,61 @@ func cellLess(a, b string) bool {
 	if aok != bok {
 		return aok
 	}
-	return strings.ToLower(a) < strings.ToLower(b)
+	return naturalLess(a, b)
+}
+
+// naturalLess compares two strings chunk by chunk, where a chunk is either a
+// run of ASCII digits or a run of anything else. Digit runs compare by numeric
+// value (leading zeros ignored), other runs compare case-insensitively. When
+// the two strings are equal under those rules, plain byte order breaks the tie
+// so the result stays a strict weak ordering.
+func naturalLess(a, b string) bool {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		ad, bd := isDigit(a[i]), isDigit(b[j])
+		if ad && bd {
+			ai, bj := i, j
+			for i < len(a) && isDigit(a[i]) {
+				i++
+			}
+			for j < len(b) && isDigit(b[j]) {
+				j++
+			}
+			an := strings.TrimLeft(a[ai:i], "0")
+			bn := strings.TrimLeft(b[bj:j], "0")
+			if len(an) != len(bn) {
+				return len(an) < len(bn)
+			}
+			if an != bn {
+				return an < bn
+			}
+			continue
+		}
+		if ad != bd {
+			// Digits sort before letters and punctuation, so "node1" precedes
+			// "node-a" regardless of the two runs' byte values.
+			return ad
+		}
+		ac, bc := lower(a[i]), lower(b[j])
+		if ac != bc {
+			return ac < bc
+		}
+		i++
+		j++
+	}
+	if len(a)-i != len(b)-j {
+		return len(a)-i < len(b)-j
+	}
+	return a < b
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+func lower(c byte) byte {
+	if c >= 'A' && c <= 'Z' {
+		return c + 'a' - 'A'
+	}
+	return c
 }
 
 func sortVal(s string) (float64, bool) {
