@@ -79,9 +79,9 @@ deployments, and recent warnings). From there:
 - A status bar always shows the keys available right now, with the creator
   handle in the bottom-right.
 
-Press `Tab` to move focus between the nav and the main area, `Enter` on a nav
-entry to open it, and the Overview entry to return to the cockpit. The focused
-pane has a highlighted border.
+The nav starts focused. Press `Tab` to move focus between the nav and the main
+area, `Enter` on a nav entry to open it, and the Overview entry to return to the
+cockpit. The focused pane has a highlighted border.
 
 ## Themes
 

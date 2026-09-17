@@ -66,6 +66,26 @@ func TestAdoptStartupTransitionsToCockpit(t *testing.T) {
 	}
 }
 
+func TestAdoptStartupFocusesSidebar(t *testing.T) {
+	a := newSplashApp()
+	a.width, a.height = 80, 24
+
+	m, _ := a.adoptStartup(startupReadyMsg{client: &k8s.Client{}, catalog: defaultNavCatalog()})
+	if got := m.(App).focus; got != focusSidebar {
+		t.Fatalf("focus = %v, want focusSidebar for a fresh session", got)
+	}
+}
+
+func TestAdoptStartupKeepsMainFocusWithoutSidebar(t *testing.T) {
+	a := newSplashApp()
+	a.width, a.height = minSidebar-1, 24
+
+	m, _ := a.adoptStartup(startupReadyMsg{client: &k8s.Client{}, catalog: defaultNavCatalog()})
+	if got := m.(App).focus; got != focusMain {
+		t.Fatalf("focus = %v, want focusMain when the sidebar is hidden", got)
+	}
+}
+
 func TestGoodbyeMentionsAppAndCredit(t *testing.T) {
 	plain := ansi.Strip(goodbye(PickTheme("ansi")))
 	if !strings.Contains(plain, "ku") || !strings.Contains(plain, creatorHandle) {

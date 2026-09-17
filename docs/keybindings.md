@@ -11,7 +11,7 @@ can run any of these and jump to any resource.
 | `g` / `G` | top / bottom |
 | `Ctrl+u` / `Ctrl+d` | half page up / down |
 | `PgUp` / `PgDn` | page up / down |
-| `Tab` | switch pane (nav / table) |
+| `Tab` | switch pane (nav / table); the nav is focused at startup |
 | `Left` / `h` | focus the nav from the table |
 | `Right` / `l` | open the selected nav entry while the nav is focused |
 

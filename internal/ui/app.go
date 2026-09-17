@@ -217,6 +217,10 @@ func (a App) adoptStartup(m startupReadyMsg) (tea.Model, tea.Cmd) {
 	}
 	a.splash = false
 	a.connect(m.client, m.catalog)
+	// A fresh session starts with the sidebar focused, so the menu is one key
+	// away without pressing tab first. A terminal too narrow for the sidebar
+	// keeps focus on the main pane, and a --resource start lands on its table.
+	a.focus = focusSidebar
 	// connect rebuilds the help view, so the plugin column must be set after it.
 	a.plugins = m.plugins
 	a.help.extra = pluginHelpGroups(a.plugins)
@@ -243,6 +247,9 @@ func (a App) adoptStartup(m startupReadyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	a.relayout()
+	if !a.sidebarVisible() {
+		a.focus = focusMain
+	}
 	a.loading = true // keep the spinner running through the first load
 	return a, tea.Batch(tickCmd(), a.loadCmd())
 }
