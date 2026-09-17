@@ -5,9 +5,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bjarneo/ku/internal/k8s"
@@ -17,6 +19,21 @@ import (
 
 // version is set at build time with -ldflags "-X main.version=vX.Y.Z".
 var version = "dev"
+
+// groupList collects a repeatable string flag. The stdlib flag package has no
+// slice support and kubectl's --as-group is repeatable, so Set appends instead
+// of replacing.
+type groupList []string
+
+func (g *groupList) String() string { return strings.Join(*g, ",") }
+
+func (g *groupList) Set(v string) error {
+	if v == "" {
+		return errors.New("group must not be empty")
+	}
+	*g = append(*g, v)
+	return nil
+}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "upgrade" {
@@ -37,6 +54,8 @@ func main() {
 
 	var (
 		ctxFlag, nsFlag, resFlag, themeFlag, kubeconfigFlag string
+		asFlag, asUIDFlag                                   string
+		asGroupFlag                                         groupList
 		checkFlag, versionFlag, devFlag, editFlag           bool
 	)
 	flag.StringVar(&ctxFlag, "context", "", "kubeconfig context to use (default: current-context)")
@@ -45,18 +64,27 @@ func main() {
 	flag.StringVar(&resFlag, "resource", "", "initial resource, e.g. pods, deploy, svc")
 	flag.StringVar(&themeFlag, "theme", "", "color theme: ansi (default) or tokyonight")
 	flag.StringVar(&kubeconfigFlag, "kubeconfig", "", "path to the kubeconfig file (default: $KUBECONFIG or ~/.kube/config)")
+	flag.StringVar(&asFlag, "as", "", "username to impersonate for the session, e.g. system:admin")
+	flag.Var(&asGroupFlag, "as-group", "group to impersonate; repeat the flag for multiple groups")
+	flag.StringVar(&asUIDFlag, "as-uid", "", "uid to impersonate")
 	flag.BoolVar(&devFlag, "dev", false, "developer view: hide cluster admin resources and node ops")
 	flag.BoolVar(&editFlag, "edit", false, "start in edit mode; default is read-only, toggle from the command palette")
 	flag.BoolVar(&checkFlag, "check", false, "run a read-only connectivity check and exit")
 	flag.BoolVar(&versionFlag, "version", false, "print version and exit")
 	flag.Parse()
 
+	imp := k8s.Impersonation{User: asFlag, Groups: asGroupFlag, UID: asUIDFlag}
+	if err := imp.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+
 	switch {
 	case versionFlag:
 		fmt.Println("ku", version)
 		return
 	case checkFlag:
-		if err := check(ctxFlag, kubeconfigFlag, nsFlag, resFlag); err != nil {
+		if err := check(ctxFlag, kubeconfigFlag, nsFlag, resFlag, imp); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
@@ -64,14 +92,15 @@ func main() {
 	}
 
 	if err := ui.Run(ui.Options{
-		Context:    ctxFlag,
-		Namespace:  nsFlag,
-		Resource:   resFlag,
-		Theme:      themeFlag,
-		Kubeconfig: kubeconfigFlag,
-		Version:    version,
-		Dev:        devFlag,
-		Edit:       editFlag,
+		Context:     ctxFlag,
+		Namespace:   nsFlag,
+		Resource:    resFlag,
+		Theme:       themeFlag,
+		Kubeconfig:  kubeconfigFlag,
+		Version:     version,
+		Dev:         devFlag,
+		Edit:        editFlag,
+		Impersonate: imp,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
@@ -93,16 +122,19 @@ func runUpgrade(args []string) error {
 
 // check performs a read-only listing to validate connectivity and discovery
 // without starting the UI. Useful in non-interactive environments.
-func check(ctxName, kubeconfig, ns, resQuery string) error {
+func check(ctxName, kubeconfig, ns, resQuery string, imp k8s.Impersonation) error {
 	if resQuery == "" {
 		resQuery = "pods"
 	}
-	cl, err := k8s.NewClient(ctxName, kubeconfig)
+	cl, err := k8s.NewClient(ctxName, kubeconfig, imp)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("context:   %s\nhost:      %s\nnamespace: %q\nresources: %d discovered\n",
 		cl.ContextName, cl.Host, cl.Namespace, len(cl.Registry().All()))
+	if imp.Active() {
+		fmt.Printf("as:        %s\n", imp)
+	}
 
 	ri, ok := cl.Registry().Resolve(resQuery)
 	if !ok {

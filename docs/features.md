@@ -172,3 +172,29 @@ relevant actions are always in view.
 Switching context rebuilds the client, the resource catalog, and the left nav.
 Your last context and namespace are remembered in `~/.config/ku/state.json` for
 next launch.
+
+## Impersonation
+
+`--as`, `--as-group` and `--as-uid` make every call in the session act as
+another identity, the same as the kubectl flags of those names. Use it to reach
+objects your own kubeconfig user may not touch, for example deleting something
+only a cluster admin may delete.
+
+```
+ku --edit --as system:admin --as-group system:masters
+```
+
+`--as-group` is repeatable. A group or a uid without a user is rejected before
+the session starts, with a message naming the flag, rather than surfacing later
+as a kubeconfig load error.
+
+While impersonation is active the header carries an `as` chip, showing the user
+name and a group count. The `C` command preview includes the flags, so the
+printed `kubectl` line reproduces what the session is doing.
+
+The identity survives a context switch with `c`, since the rebuilt client keeps
+it. It is never persisted: `state.json` holds only context, namespace and theme,
+so the next launch runs as you again.
+
+Impersonation changes who you are, not what edit mode allows. The session is
+still read-only unless you pass `--edit` or press `Shift+E`.

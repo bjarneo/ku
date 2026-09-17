@@ -19,6 +19,9 @@ type Options struct {
 	Version    string // running version, for the background update check ("dev" = skip)
 	Dev        bool   // developer scope: hide cluster admin resources and node ops
 	Edit       bool   // start in edit mode; the session is read-only by default
+	// Impersonate is the identity to act as, from --as/--as-group/--as-uid. The
+	// zero value uses the kubeconfig identity. It is never persisted.
+	Impersonate k8s.Impersonation
 }
 
 // Run starts the interactive TUI. The cluster connection and config load run in
@@ -30,11 +33,11 @@ func Run(opts Options) error {
 	if ctxName == "" && hasSaved {
 		ctxName = saved.Context
 	}
-	if err := k8s.ValidateKubeconfig(ctxName, opts.Kubeconfig); err != nil {
+	if err := k8s.ValidateKubeconfig(ctxName, opts.Kubeconfig, opts.Impersonate); err != nil {
 		if opts.Context != "" || ctxName == "" {
 			return err
 		}
-		if err := k8s.ValidateKubeconfig("", opts.Kubeconfig); err != nil {
+		if err := k8s.ValidateKubeconfig("", opts.Kubeconfig, opts.Impersonate); err != nil {
 			return err
 		}
 	}
@@ -51,6 +54,7 @@ func Run(opts Options) error {
 
 	app := App{theme: th, keys: defaultKeys(), splash: true, opts: opts, saved: saved, hasSaved: hasSaved}
 	app.dev = opts.Dev
+	app.impersonate = opts.Impersonate
 	// Safe by default: the session starts read-only unless --edit is passed. It
 	// can be toggled at runtime from the command palette.
 	app.readOnly = !opts.Edit

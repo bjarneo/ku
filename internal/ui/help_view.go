@@ -98,14 +98,21 @@ func (h helpView) View(width, height int) string {
 
 	border := h.th.ModalBorder
 	spacer := "\n\n"
-	frameRows := 6 // border/padding plus title and blank spacer
+	frameRows := 6     // border/padding plus title and blank spacer
+	inner := width - 6 // border plus Padding(1, 2)
 	if height < 7 {
 		border = border.Padding(0, 1)
 		spacer = "\n"
-		frameRows = 3 // border plus title line
+		frameRows = 3     // border plus title line
+		inner = width - 4 // border plus Padding(0, 1)
 	}
+	// Wrap the note to the inner width instead of letting it set the box width:
+	// a box wider than the terminal loses its right border and the tail of the
+	// note to the overlay clamp.
+	var noteLines []string
 	if h.note != "" {
-		frameRows++ // the mode summary takes one extra line
+		noteLines = wrapPlain(h.note, inner)
+		frameRows += len(noteLines)
 	}
 	visible := height - frameRows
 	if visible < 1 {
@@ -130,8 +137,8 @@ func (h helpView) View(width, height int) string {
 		hint = h.th.Dim.Render(fmt.Sprintf("  ↑↓ scroll %d/%d · esc close", h.offset+1, maxOffset+1))
 	}
 	header := title + hint
-	if h.note != "" {
-		header += "\n" + h.th.Warn.Render(h.note)
+	for _, line := range noteLines {
+		header += "\n" + h.th.Warn.Render(line)
 	}
 	content := header + spacer + grid
 

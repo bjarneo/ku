@@ -7,6 +7,8 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/bjarneo/ku/internal/k8s"
 )
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -130,4 +132,20 @@ func paneInnerSize(outer, frame int) int {
 		return n
 	}
 	return 1
+}
+
+// impersonationLabel renders an impersonated identity for the header chip: the
+// user name, plus a group count when groups are set. Kept short on purpose; the
+// flags in full are in the `C` command preview.
+func impersonationLabel(imp k8s.Impersonation) string {
+	s := imp.User
+	if s == "" {
+		// Only reachable if an unvalidated identity gets this far; a bare "as "
+		// with no name reads as a rendering bug rather than a warning.
+		s = "(no user)"
+	}
+	if n := len(imp.Groups); n > 0 {
+		s += " +" + itoa(n) + "g"
+	}
+	return s
 }

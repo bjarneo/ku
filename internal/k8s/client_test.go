@@ -15,7 +15,7 @@ func TestValidateKubeconfigEmptyConfigError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := ValidateKubeconfig("", path)
+	err := ValidateKubeconfig("", path, Impersonation{})
 	if err == nil {
 		t.Fatal("ValidateKubeconfig succeeded for empty config")
 	}

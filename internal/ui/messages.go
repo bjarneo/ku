@@ -181,9 +181,9 @@ func startupCmd(opts Options, saved savedState, hasSaved bool, keys keyMap) tea.
 		if ctxName == "" && hasSaved {
 			ctxName = saved.Context
 		}
-		cl, err := k8s.NewClient(ctxName, opts.Kubeconfig)
+		cl, err := k8s.NewClient(ctxName, opts.Kubeconfig, opts.Impersonate)
 		if err != nil && opts.Context == "" && ctxName != "" {
-			cl, err = k8s.NewClient("", opts.Kubeconfig)
+			cl, err = k8s.NewClient("", opts.Kubeconfig, opts.Impersonate)
 		}
 		if err != nil {
 			return startupReadyMsg{err: err}
@@ -442,9 +442,12 @@ func drainCmd(cl *k8s.Client, name string) tea.Cmd {
 	}
 }
 
-func switchContextCmd(name, kubeconfig string) tea.Cmd {
+// switchContextCmd rebuilds the client for another context. It carries the
+// impersonation forward, so switching context does not silently drop the
+// identity the session was started with.
+func switchContextCmd(name, kubeconfig string, imp k8s.Impersonation) tea.Cmd {
 	return func() tea.Msg {
-		cl, err := k8s.NewClient(name, kubeconfig)
+		cl, err := k8s.NewClient(name, kubeconfig, imp)
 		return clientReadyMsg{client: cl, err: err}
 	}
 }

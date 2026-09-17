@@ -47,9 +47,10 @@ type Client struct {
 // NewClient builds a client from the kubeconfig. kubeconfigPath, if non-empty,
 // overrides the default lookup ($KUBECONFIG, then ~/.kube/config). If
 // contextOverride is non-empty it selects that context instead of the
-// kubeconfig's current-context.
-func NewClient(contextOverride, kubeconfigPath string) (*Client, error) {
-	cc, restCfg, err := loadClientConfig(contextOverride, kubeconfigPath)
+// kubeconfig's current-context. A non-zero imp makes every call act as that
+// identity.
+func NewClient(contextOverride, kubeconfigPath string, imp Impersonation) (*Client, error) {
+	cc, restCfg, err := loadClientConfig(contextOverride, kubeconfigPath, imp)
 	if err != nil {
 		return nil, err
 	}
@@ -122,12 +123,12 @@ func NewClient(contextOverride, kubeconfigPath string) (*Client, error) {
 
 // ValidateKubeconfig checks local kubeconfig loading without connecting to the
 // API server. It lets startup fail before the terminal UI sends feature probes.
-func ValidateKubeconfig(contextOverride, kubeconfigPath string) error {
-	_, _, err := loadClientConfig(contextOverride, kubeconfigPath)
+func ValidateKubeconfig(contextOverride, kubeconfigPath string, imp Impersonation) error {
+	_, _, err := loadClientConfig(contextOverride, kubeconfigPath, imp)
 	return err
 }
 
-func loadClientConfig(contextOverride, kubeconfigPath string) (clientcmd.ClientConfig, *rest.Config, error) {
+func loadClientConfig(contextOverride, kubeconfigPath string, imp Impersonation) (clientcmd.ClientConfig, *rest.Config, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if kubeconfigPath != "" {
 		rules.ExplicitPath = kubeconfigPath
@@ -135,6 +136,14 @@ func loadClientConfig(contextOverride, kubeconfigPath string) (clientcmd.ClientC
 	overrides := &clientcmd.ConfigOverrides{}
 	if contextOverride != "" {
 		overrides.CurrentContext = contextOverride
+	}
+	// The same overrides kubectl binds --as, --as-group and --as-uid to. They
+	// become restCfg.Impersonate, which every client and transport built below
+	// inherits, so no call site needs to know about impersonation.
+	if imp.Active() {
+		overrides.AuthInfo.Impersonate = imp.User
+		overrides.AuthInfo.ImpersonateGroups = imp.Groups
+		overrides.AuthInfo.ImpersonateUID = imp.UID
 	}
 	cc := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides)
 

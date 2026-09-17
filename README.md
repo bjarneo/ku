@@ -54,6 +54,7 @@ ku --resource deploy     # start on a resource type
 ku --theme tokyonight    # switch theme
 ku --edit                # start in edit mode (default is read-only)
 ku --dev                 # developer view, app resources only
+ku --as system:admin     # act as another identity
 ku upgrade               # replace the current binary with the latest release
 ```
 
@@ -88,6 +89,25 @@ ku --dev --edit          # edit mode, developer view
 
 Disabled keys are dropped from the footer hints and the command palette, and `?`
 summarizes the active mode.
+
+## Impersonation
+
+`--as`, `--as-group` and `--as-uid` work like their kubectl counterparts. Every
+call in the session acts as that identity, which is the way to reach objects
+your own kubeconfig user may not touch.
+
+```
+ku --edit --as system:admin
+ku --edit --as system:admin --as-group system:masters
+```
+
+`--as-group` is repeatable. Groups and a uid need a user, so `--as-group` on its
+own is rejected before the session starts.
+
+The header shows an `as` chip while impersonation is active. Impersonation is
+per-invocation: it is never written to
+`state.json`, so the next launch is back to your own identity. It also does not
+relax the read-only default, so writes still need `--edit` or `Shift+E`.
 
 ## Configuration
 

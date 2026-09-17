@@ -95,6 +95,18 @@ func (a App) kubectlBaseArgs() []string {
 	if contextName := a.client.ContextName; contextName != "" {
 		args = append(args, "--context", contextName)
 	}
+	// Without these the printed command would run as a different identity than
+	// the session it claims to reproduce. kubectl rejects --as-group and --as-uid
+	// without --as, so they only go out alongside it.
+	if a.impersonate.User != "" {
+		args = append(args, "--as", a.impersonate.User)
+		for _, g := range a.impersonate.Groups {
+			args = append(args, "--as-group", g)
+		}
+		if a.impersonate.UID != "" {
+			args = append(args, "--as-uid", a.impersonate.UID)
+		}
+	}
 	return args
 }
 
