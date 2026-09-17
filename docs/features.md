@@ -145,6 +145,15 @@ deleted when you exit or detach. Override the image with `$KU_DEBUG_IMAGE`
 (default `busybox`). This needs permission to create privileged pods, so it may
 be blocked on clusters with restrictive Pod Security settings.
 
+## Plugins
+
+Bind your own keys to external commands in `~/.config/ku/config.yaml`. A plugin
+is scoped to resources, receives the selected row as `$NAMESPACE`, `$NAME`,
+`$RESOURCE`, `$CONTEXT` and `$CLUSTER`, and runs either detached with a result
+notice or inside the embedded terminal. Typical uses: open the row in a web
+dashboard, jump to the CI job behind a runner pod, or run a describe pipeline.
+See [Configuration](configuration.md#plugins) for the fields and examples.
+
 ## Scale, restart, trigger, delete
 
 `s` on a workload (deployment, statefulset, replicaset) prompts for a replica

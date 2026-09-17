@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 // Client holds the connection to a single cluster/context. It is rebuilt from
@@ -21,6 +22,10 @@ import (
 type Client struct {
 	// ContextName is the kubeconfig context currently in use.
 	ContextName string
+	// ClusterName is the kubeconfig cluster the context points at. Plugins
+	// expose it as $CLUSTER, since contexts are often named differently from
+	// the clusters they target.
+	ClusterName string
 	// Host is the API server URL, shown in the header.
 	Host string
 	// Namespace is the default namespace declared by the context ("" if none).
@@ -93,6 +98,7 @@ func NewClient(contextOverride, kubeconfigPath string) (*Client, error) {
 
 	c := &Client{
 		ContextName: ctxName,
+		ClusterName: clusterNameFor(raw, ctxName),
 		Host:        restCfg.Host,
 		Namespace:   ns,
 		restConfig:  restCfg,
@@ -191,3 +197,13 @@ func (c *Client) Contexts() []string { return c.contexts }
 // Kubeconfig returns the explicit kubeconfig path in use ("" for the default),
 // so a context switch can reuse it.
 func (c *Client) Kubeconfig() string { return c.kubeconfig }
+
+// clusterNameFor returns the cluster the named context points at, or "" when
+// the kubeconfig has no such context.
+func clusterNameFor(raw clientcmdapi.Config, ctxName string) string {
+	ctx, ok := raw.Contexts[ctxName]
+	if !ok || ctx == nil {
+		return ""
+	}
+	return ctx.Cluster
+}

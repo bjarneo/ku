@@ -46,6 +46,11 @@ namespaces (a server-side `spec.nodeName` field selector, shown as a `node`
 chip in the header). `esc` drops the scope; switching resource or context also
 clears it. Works in read-only mode.
 
+Plugins from `~/.config/ku/config.yaml` add their own keys to this table for the
+resources they are scoped to. They show in the footer, the palette and `?`, and
+they cannot take a key listed on this page. See
+[Configuration](configuration.md#plugins).
+
 Draining cordons the node, then evicts its pods through the eviction API so
 PodDisruptionBudgets are honored. DaemonSet and static (mirror) pods are left in
 place, the same as `kubectl drain --ignore-daemonsets`.
