@@ -7,31 +7,41 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // maxLogLines caps the streamed buffer so an endless log can't grow without
 // bound. It only applies to the append path (storeLine); content set in one shot
-// (SetContent) is not trimmed.
-const maxLogLines = 5000
+// (SetContent) is not trimmed. When the cap is hit, logTrimChunk lines drop at
+// once: filtering and the viewport rebuild then run once per chunk instead of
+// once per line.
+const (
+	maxLogLines  = 5000
+	logTrimChunk = maxLogLines / 10
+)
 
 // pager is a scrollable text viewport with regex filtering, wrap toggling, and
 // whole-line selection/copy. It backs every read-only text screen (logs, YAML
 // detail, config summary); each embeds a pager and only supplies its content and
-// screen-specific keys. Content is held as a []string and pushed with
-// SetContentLines, so appends are amortized O(1) and there is no giant joined
-// string to re-split on every sync.
+// screen-specific keys. Content is held as a []string and pushed to the
+// viewport in batches: appends go through AppendLines, wholesale changes through
+// SetContentLines.
 type pager struct {
 	th     Theme
-	vp     viewport.Model
+	vp     pagerViewport
 	title  string
 	follow bool
 	height int // pane content height, retained so chrome changes can relayout
 
 	lines    []string // raw buffer
 	filtered []string // lines currently shown (all of them when no filter is active)
+
+	// Viewport sync. Streaming appends are pushed to the viewport in one call
+	// per batch; dirty marks a wholesale change (filter, trim, selection) that
+	// needs a full replace instead.
+	dirty    bool
+	appended []string
 
 	// Filtering. The filter is a regular expression matched against each line;
 	// an empty filter shows everything and an invalid pattern shows everything
@@ -54,7 +64,7 @@ type pager struct {
 }
 
 func newPager(th Theme) pager {
-	vp := viewport.New()
+	vp := newPagerViewport()
 	vp.SoftWrap = true // wrap long lines so the full line is visible, not truncated
 	return pager{th: th, vp: vp, follow: true, filter: newFilterInput("filter (regex)")}
 }
@@ -108,7 +118,7 @@ func (p *pager) SetLines(lines []string) {
 	p.clearSelection()
 	p.lines = lines
 	p.rebuildContent()
-	p.vp.SetContentLines(p.filtered)
+	p.pushContent()
 	p.vp.GotoTop()
 }
 
@@ -123,8 +133,10 @@ func (p *pager) storeLine(s string) {
 	s = expandTabs(s) // tabs measure as zero width and would spill past the pane
 	p.lines = append(p.lines, s)
 	if len(p.lines) > maxLogLines {
-		p.lines = p.lines[len(p.lines)-maxLogLines:]
-		p.rebuildContent() // rebuild only when trimming the front
+		// Drop a chunk, not a line: a full rebuild per arriving line at the cap
+		// is a full filter rescan plus a full viewport remeasure.
+		p.lines = p.lines[logTrimChunk:]
+		p.rebuildContent()
 		return
 	}
 	if p.re != nil && !p.re.MatchString(ansi.Strip(s)) {
@@ -132,6 +144,9 @@ func (p *pager) storeLine(s string) {
 	}
 	p.filtered = append(p.filtered, s)
 	p.matched = len(p.filtered)
+	if !p.selecting {
+		p.appended = append(p.appended, s)
+	}
 }
 
 // syncViewport pushes the current content into the viewport, sticking to the
@@ -141,14 +156,26 @@ func (p *pager) syncViewport() {
 	if p.selecting {
 		return
 	}
-	p.vp.SetContentLines(p.filtered)
+	if p.dirty {
+		p.pushContent()
+	} else if len(p.appended) > 0 {
+		p.vp.AppendLines(p.appended)
+		p.appended = nil
+	}
 	p.stickToBottom()
+}
+
+// pushContent replaces the viewport's content with the filtered view.
+func (p *pager) pushContent() {
+	p.vp.SetContentLines(p.filtered)
+	p.dirty = false
+	p.appended = nil
 }
 
 // --- visual selection -------------------------------------------------------
 
 // wrappedHeight is how many rows a line occupies at width w, matching the
-// viewport's own soft-wrap math (see viewport.calculateLine).
+// viewport's own soft-wrap math (see pagerViewport.wrappedRows).
 func wrappedHeight(s string, w int) int {
 	if w < 1 {
 		w = 1
@@ -251,6 +278,7 @@ func (p *pager) clearSelection() {
 	p.selecting = false
 	p.marking = false
 	p.selLines = nil
+	p.dirty = true // the viewport holds the styled snapshot; restore the live view
 }
 
 func (p *pager) moveSel(d int) { p.setSelCursor(p.selCursor + d) }
@@ -333,13 +361,16 @@ func (p *pager) clear() {
 	p.filtered = nil
 	p.matched = 0
 	p.follow = true
-	p.vp.SetContentLines(nil)
+	p.dirty = true
+	p.pushContent()
 	p.stickToBottom()
 }
 
 // rebuildContent recomputes the filtered view from scratch, applying the active
 // filter. Used when the line set or the filter changes.
 func (p *pager) rebuildContent() {
+	p.dirty = true
+	p.appended = nil
 	if p.re == nil {
 		// Clone so filtered doesn't alias the lines backing array; storeLine
 		// appends to each independently and a front-trim reslices lines.
