@@ -4,10 +4,13 @@
 
 ku opens on a cockpit: a single-screen overview of the cluster. It shows the
 server version, node readiness and any node pressure (DiskPressure,
-MemoryPressure, NotReady, ...), live CPU and memory gauges (from the metrics
-API), pod counts by phase plus how many are not-ready or crashlooping,
-deployment readiness, and recent warning events (deduplicated, with a recurrence
-count). It refreshes every few seconds. Reach it any time from the Overview
+MemoryPressure, NotReady, ...), CPU and memory bars, pod counts by phase plus
+how many are not-ready or crashlooping, deployment readiness, and recent
+warning events (deduplicated, with a recurrence count). Each resource bar has
+three segments: live usage (from the metrics API), requested by pods but idle,
+and free to schedule. The legend below the bars gives the values. When pods
+are waiting for a node, a pending line shows the CPU and memory they ask for,
+so you can see demand the cluster cannot place. It refreshes every few seconds. Reach it any time from the Overview
 entry at the top of the nav, and press Enter on a nav resource (or `:` /
 `Ctrl+K`) to drill in.
 

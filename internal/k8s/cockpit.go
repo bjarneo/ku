@@ -37,6 +37,15 @@ type ClusterOverview struct {
 
 	Namespaces int
 
+	// Scheduling capacity, from pod resource requests rather than live usage.
+	// Requested sums cover pods bound to a node that still hold their
+	// reservation (not Succeeded or Failed). Pending sums cover pods with no
+	// node yet: demand the scheduler could not place.
+	CPUReqMilli     int64
+	MemReqBytes     int64
+	CPUPendingMilli int64
+	MemPendingBytes int64
+
 	Pods         int
 	PodRunning   int
 	PodPending   int
@@ -140,6 +149,17 @@ func (c *Client) ClusterStats(ctx context.Context) (*ClusterOverview, error) {
 			if p.Status.Phase == corev1.PodRunning && !podReady(p) {
 				o.PodNotReady++
 			}
+			cpu, mem := podRequests(p)
+			switch {
+			case p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed:
+				// Finished pods release their reservation.
+			case p.Spec.NodeName == "":
+				o.CPUPendingMilli += cpu
+				o.MemPendingBytes += mem
+			default:
+				o.CPUReqMilli += cpu
+				o.MemReqBytes += mem
+			}
 		}
 	})
 
@@ -161,6 +181,27 @@ func (c *Client) ClusterStats(ctx context.Context) (*ClusterOverview, error) {
 
 	wg.Wait()
 	return o, nil
+}
+
+// podRequests returns the CPU (milli) and memory (bytes) a pod reserves on its
+// node, following the scheduler's rule: the larger of the summed app
+// containers and the largest single init container, plus pod overhead.
+func podRequests(p *corev1.Pod) (cpuMilli, memBytes int64) {
+	for i := range p.Spec.Containers {
+		c := &p.Spec.Containers[i]
+		cpuMilli += c.Resources.Requests.Cpu().MilliValue()
+		memBytes += c.Resources.Requests.Memory().Value()
+	}
+	for i := range p.Spec.InitContainers {
+		c := &p.Spec.InitContainers[i]
+		cpuMilli = max(cpuMilli, c.Resources.Requests.Cpu().MilliValue())
+		memBytes = max(memBytes, c.Resources.Requests.Memory().Value())
+	}
+	if p.Spec.Overhead != nil {
+		cpuMilli += p.Spec.Overhead.Cpu().MilliValue()
+		memBytes += p.Spec.Overhead.Memory().Value()
+	}
+	return cpuMilli, memBytes
 }
 
 func deploymentReady(d *appsv1.Deployment) bool {

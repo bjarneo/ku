@@ -35,6 +35,8 @@ func fakeOverview() *k8s.ClusterOverview {
 		Version: "v1.31.0", Nodes: 5, NodesReady: 5, HasMetrics: true,
 		CPUUsedMilli: 4200, CPUAllocMilli: 16000,
 		MemUsedBytes: 12 << 30, MemAllocBytes: 32 << 30,
+		CPUReqMilli: 9000, MemReqBytes: 20 << 30,
+		CPUPendingMilli: 500, MemPendingBytes: 1 << 30,
 		Namespaces: 23, Pods: 200, PodRunning: 190, PodPending: 2, PodFailed: 1,
 		PodNotReady: 3, PodCrashLoop: 1,
 		Deployments: 42, DeploymentsReady: 40,
