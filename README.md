@@ -163,7 +163,7 @@ See [Configuration](docs/configuration.md) for the full reference.
 
 ## Highlights
 
-- A cockpit overview on launch: cluster health, node CPU and memory gauges, pod and deployment status, and recent warnings.
+- A cockpit overview on launch: cluster health, CPU and memory bars split into used, requested and free, pod and deployment status, and recent warnings.
 - Server-rendered tables for any resource, the same columns as `kubectl get`, including CRDs.
 - lazygit-style layout: a left resource nav, `Tab` between panes, and a status bar that always shows the keys that work right now.
 - Config summaries, raw YAML, logs, Service port-forward, edit-in-editor, shell into pods or nodes, delete, scale, restart, and CronJob trigger, all inside the TUI.

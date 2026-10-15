@@ -46,21 +46,6 @@ func (c cockpitView) View(width, height int) string {
 		cluster = append(cluster, th.Bad.Render("⚠ "+msg))
 	}
 
-	var resources []string
-	if o.HasMetrics {
-		cpuPct := pct(o.CPUUsedMilli, o.CPUAllocMilli)
-		memPct := pct(o.MemUsedBytes, o.MemAllocBytes)
-		resources = []string{
-			c.gauge("CPU", cpuPct, gaugeWidth(width)),
-			c.gauge("MEM", memPct, gaugeWidth(width)),
-			th.Dim.Render(fmt.Sprintf("%s / %s cores · %s / %s",
-				cores(o.CPUUsedMilli), cores(o.CPUAllocMilli),
-				gib(o.MemUsedBytes), gib(o.MemAllocBytes))),
-		}
-	} else {
-		resources = []string{th.Dim.Render("metrics unavailable"), th.Dim.Render("(install metrics-server)")}
-	}
-
 	workloads := []string{
 		c.kv("pods", fmt.Sprintf("%d", o.Pods)),
 		"  " + th.Good.Render(fmt.Sprintf("%d running", o.PodRunning)),
@@ -75,25 +60,27 @@ func (c cockpitView) View(width, height int) string {
 	}
 	workloads = append(workloads, c.kv("deploys", fmt.Sprintf("%d/%d ready", o.DeploymentsReady, o.Deployments)))
 
-	// Top region: three columns when wide, stacked otherwise.
+	// Top region: three columns when wide, stacked otherwise. Resources holds
+	// the widest lines, so it takes a larger share. Gauges are sized per pane,
+	// so the Resources lines are built once the pane width is known.
 	var top string
 	topH := clamp(height/2, 5, 9)
+	gap := strings.Repeat(" ", paneGap)
 	if width >= 72 {
 		panelW := width - 2*paneGap
-		w1 := panelW / 3
-		w2 := panelW / 3
-		w3 := panelW - w1 - w2
+		w1 := panelW * 27 / 100
+		w3 := w1
+		w2 := panelW - w1 - w3
 		top = lipgloss.JoinHorizontal(lipgloss.Top,
-			c.panel("Cluster", cluster, w1, topH),
-			strings.Repeat(" ", paneGap),
-			c.panel("Resources", resources, w2, topH),
-			strings.Repeat(" ", paneGap),
+			c.panel("Cluster", cluster, w1, topH), gap,
+			c.panel("Resources", c.resourceLines(w2), w2, topH), gap,
 			c.panel("Workloads", workloads, w3, topH),
 		)
 	} else {
+		resources := c.resourceLines(width)
 		top = lipgloss.JoinVertical(lipgloss.Left,
 			c.panel("Cluster", cluster, width, 5),
-			c.panel("Resources", resources, width, 5),
+			c.panel("Resources", resources, width, len(resources)+3),
 			c.panel("Workloads", workloads, width, 7),
 		)
 		topH = lipgloss.Height(top)
@@ -106,6 +93,45 @@ func (c cockpitView) View(width, height int) string {
 	warnings := c.panel("Recent warnings", c.warningLines(paneContentWidth(width)), width, warnH)
 
 	return clampBlock(lipgloss.JoinVertical(lipgloss.Left, top, warnings), width, height)
+}
+
+// resourceLines renders CPU and memory as one bar each with three segments:
+// live usage, requested but idle, and free to schedule. Requests are what the
+// scheduler books against a node, so they differ from live usage: a cluster
+// can be idle yet fully booked. The legend below the bars carries the values.
+// Pods waiting for a node add a pending line with the demand nothing can place.
+func (c cockpitView) resourceLines(paneW int) []string {
+	o := c.data
+	th := c.th
+	if o.CPUAllocMilli <= 0 && o.MemAllocBytes <= 0 {
+		return []string{th.Dim.Render("capacity unavailable")}
+	}
+	gw := clamp(paneContentWidth(paneW), 12, 44)
+	cpuFree := max(o.CPUAllocMilli-o.CPUReqMilli, 0)
+	memFree := max(o.MemAllocBytes-o.MemReqBytes, 0)
+
+	legend := func(glyph string, style lipgloss.Style, key, val string) string {
+		return style.Render(glyph) + " " + th.HeaderKey.Render(fmt.Sprintf("%-10s", key)) + val
+	}
+	lines := []string{
+		c.gauge("CPU", pct(o.CPUUsedMilli, o.CPUAllocMilli), pct(o.CPUReqMilli, o.CPUAllocMilli), o.HasMetrics, gw),
+		c.gauge("MEM", pct(o.MemUsedBytes, o.MemAllocBytes), pct(o.MemReqBytes, o.MemAllocBytes), o.HasMetrics, gw),
+	}
+	if o.HasMetrics {
+		lines = append(lines, legend("█", th.Good, "used", fmt.Sprintf("%s cores · %s", cores(o.CPUUsedMilli), gib(o.MemUsedBytes))))
+	} else {
+		lines = append(lines, legend("█", th.Dim, "used", th.Dim.Render("metrics unavailable")))
+	}
+	lines = append(lines,
+		legend("▓", th.HeaderVal, "requested", fmt.Sprintf("%s cores · %s", cores(o.CPUReqMilli), gib(o.MemReqBytes))),
+		legend("░", th.Dim, "free", fmt.Sprintf("%s/%s cores · %.1f/%s",
+			cores(cpuFree), cores(o.CPUAllocMilli), float64(memFree)/(1<<30), gib(o.MemAllocBytes))),
+	)
+	if o.CPUPendingMilli > 0 || o.MemPendingBytes > 0 {
+		lines = append(lines, legend("⚠", th.Bad, "pending",
+			th.Bad.Render(fmt.Sprintf("%s cores · %s", cores(o.CPUPendingMilli), gib(o.MemPendingBytes)))))
+	}
+	return lines
 }
 
 func (c cockpitView) warningLines(w int) []string {
@@ -136,24 +162,37 @@ func (c cockpitView) kv(k, v string) string {
 	return c.th.HeaderKey.Render(fmt.Sprintf("%-11s", k)) + v
 }
 
-// gauge renders "LABEL [████░░░░] 67%" colored by utilization.
-func (c cockpitView) gauge(label string, p, width int) string {
+// gauge renders "LABEL [████▓▓░░░░] 67%": used (colored by utilization),
+// requested but idle (accent), and free (dim). The trailing percentage is live
+// usage; without metrics the used segment is empty and the percentage is the
+// requested share instead.
+func (c cockpitView) gauge(label string, usedPct, reqPct int, hasMetrics bool, width int) string {
 	th := c.th
 	// layout: "LABEL " + bar + " 100%"  => label + 1 + barW + 1 + 4
 	barW := width - len(label) - 6
 	if barW < 4 {
 		barW = 4
 	}
-	filled := clamp(barW*p/100, 0, barW)
+	if !hasMetrics {
+		usedPct = 0
+	}
+	used := clamp(barW*usedPct/100, 0, barW)
+	req := clamp(barW*reqPct/100, used, barW)
 	style := th.Good
 	switch {
-	case p >= 85:
+	case usedPct >= 85:
 		style = th.Bad
-	case p >= 70:
+	case usedPct >= 70:
 		style = th.Warn
 	}
-	bar := style.Render(strings.Repeat("█", filled)) + th.Dim.Render(strings.Repeat("░", barW-filled))
-	return fmt.Sprintf("%s %s %3d%%", label, bar, p)
+	bar := style.Render(strings.Repeat("█", used)) +
+		th.HeaderVal.Render(strings.Repeat("▓", req-used)) +
+		th.Dim.Render(strings.Repeat("░", barW-req))
+	shown := usedPct
+	if !hasMetrics {
+		shown = reqPct
+	}
+	return fmt.Sprintf("%s %s %3d%%", label, bar, shown)
 }
 
 // panel draws a titled, bordered box of exactly outerW x outerH, clipping its
@@ -172,10 +211,6 @@ func (c cockpitView) panel(title string, lines []string, outerW, outerH int) str
 }
 
 // --- helpers ---------------------------------------------------------------
-
-func gaugeWidth(width int) int {
-	return clamp(width/3-4, 12, 40)
-}
 
 func pct(used, total int64) int {
 	if total <= 0 {
