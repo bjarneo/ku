@@ -33,6 +33,15 @@ func TestCellLess(t *testing.T) {
 		{"ip-10-0-2-1.ec2.internal", "ip-10-0-1-99.ec2.internal", false},
 		{"api-7d9f", "api-7d10f", true},
 		{"Node-2", "node-10", true}, // case-insensitive across the text runs
+		// Absolute timestamps sort chronologically, not by leading year.
+		{"2025-03-01T12:00:00Z", "2025-11-20T08:00:00Z", true},
+		{"2025-11-20T08:00:00Z", "2025-03-01T12:00:00Z", false},
+		{"2025-03-01T12:00:00Z", "2025-03-01T12:00:01Z", true},
+		{"2025-03-01T12:00:00.5Z", "2025-03-01T12:00:00.25Z", false},
+		{"2025-03-01T13:00:00+02:00", "2025-03-01T12:00:00Z", true}, // 11:00Z < 12:00Z
+		{"2025-03-01 12:00:00", "2025-03-02 01:00:00", true},
+		{"2025-03-09", "2025-03-10", true},
+		{"2024-12-31T23:59:59Z", "2025-01-01T00:00:00Z", true},
 	}
 	for _, c := range cases {
 		if got := cellLess(c.a, c.b); got != c.want {
