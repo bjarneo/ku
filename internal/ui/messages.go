@@ -362,6 +362,32 @@ func deleteCmd(cl *k8s.Client, res k8s.ResourceInfo, ns, name string) tea.Cmd {
 	}
 }
 
+// bulkDeleteCmd deletes every row in turn, reporting one combined result so a
+// partial failure (e.g. one pod already gone) doesn't block deleting the rest.
+func bulkDeleteCmd(cl *k8s.Client, res k8s.ResourceInfo, rows []k8s.Row) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := opCtx()
+		defer cancel()
+		var failed int
+		var lastErr error
+		for _, r := range rows {
+			if err := cl.Delete(ctx, res, r.Namespace, r.Name); err != nil {
+				failed++
+				lastErr = err
+			}
+		}
+		ok := len(rows) - failed
+		if ok == 0 {
+			return actionDoneMsg{err: lastErr}
+		}
+		text := fmt.Sprintf("deleted %d %s", ok, res.Resource)
+		if failed > 0 {
+			text += fmt.Sprintf(", %d failed", failed)
+		}
+		return actionDoneMsg{text: text, reload: true}
+	}
+}
+
 func scaleCmd(cl *k8s.Client, res k8s.ResourceInfo, ns, name string, n int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := opCtx()
