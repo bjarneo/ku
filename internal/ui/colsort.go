@@ -3,10 +3,12 @@ package ui
 import (
 	"strconv"
 	"strings"
+	"time"
 )
 
 // cellLess orders two table cells. Duration-shaped values ("2m59s", "5d")
-// compare by elapsed time, numeric-looking values (CPU "245m", MEM "1234Mi",
+// compare by elapsed time, absolute timestamps ("2025-03-01T12:00:00Z")
+// compare chronologically, numeric-looking values (CPU "245m", MEM "1234Mi",
 // percentages, restart counts, ready ratios) compare numerically, and
 // everything else compares naturally: case-insensitive, with embedded digit
 // runs compared by value so "node-2" sorts before "node-10". Unparseable/empty
@@ -90,6 +92,11 @@ func sortVal(s string) (float64, bool) {
 	if v, ok := parseAge(s); ok {
 		return v, true
 	}
+	// Absolute timestamps (e.g. CRD columns typed string instead of date) would
+	// otherwise compare by their leading year only, so parse them in full.
+	if v, ok := parseTimestamp(s); ok {
+		return v, true
+	}
 	// CPU/MEM/percent/restarts/ready all lead with their number, so the leading
 	// numeric prefix is a stable comparison key for them.
 	return leadingNum(s)
@@ -120,6 +127,31 @@ func parseAge(s string) (float64, bool) {
 		return 0, false
 	}
 	return total, matched
+}
+
+// timestampLayouts are the absolute time formats seen in table cells.
+// time.RFC3339 also accepts fractional seconds when parsing.
+var timestampLayouts = []string{
+	time.RFC3339,
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05 -0700 MST",
+	"2006-01-02 15:04:05Z07:00",
+	"2006-01-02 15:04:05",
+	"2006-01-02",
+}
+
+// parseTimestamp converts an absolute timestamp to Unix seconds.
+func parseTimestamp(s string) (float64, bool) {
+	// Cheap shape check before trying layouts: "YYYY-MM-DD..." only.
+	if len(s) < 10 || s[4] != '-' || s[7] != '-' {
+		return 0, false
+	}
+	for _, layout := range timestampLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return float64(t.UnixNano()) / 1e9, true
+		}
+	}
+	return 0, false
 }
 
 // leadingNum parses the leading numeric run of s (e.g. "245m" -> 245, "1/2" -> 1).
