@@ -3,6 +3,8 @@ package ui
 import (
 	"reflect"
 	"testing"
+
+	"github.com/bjarneo/ku/internal/k8s"
 )
 
 func TestFuzzyRankPrefersSubstring(t *testing.T) {
@@ -57,5 +59,37 @@ func TestSelectorNamespaceFilter(t *testing.T) {
 	want := []string{"foo-shop", "team-shop-foo-shop-d3e4f"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestSelectorResourceShortName(t *testing.T) {
+	reg := k8s.NewRegistry([]k8s.ResourceInfo{
+		{Resource: "pods", Kind: "Pod", ShortNames: []string{"po"}},
+		{Resource: "namespaces", Kind: "Namespace", ShortNames: []string{"ns"}},
+		{Resource: "daemonsets", Group: "apps", Kind: "DaemonSet", ShortNames: []string{"ds"}},
+		{Resource: "deployments", Group: "apps", Kind: "Deployment", ShortNames: []string{"deploy"}},
+		{Resource: "endpoints", Kind: "Endpoints", ShortNames: []string{"ep"}},
+		{Resource: "apis", Group: "hub.traefik.io", Kind: "API"},
+		{Resource: "helmreleases", Group: "helm.toolkit.fluxcd.io", Kind: "HelmRelease", ShortNames: []string{"hr"}},
+	})
+	var items []selItem
+	for _, ri := range reg.All() {
+		items = append(items, selItem{title: ri.Resource, desc: resourceDesc(ri), id: ri.Key(), aliases: ri.ShortNames})
+	}
+	s := newSelector(Theme{})
+	s.open(selResource, "Jump to resource", "", items, false)
+	for q, want := range map[string]string{
+		"hr":     "helmreleases.helm.toolkit.fluxcd.io",
+		"ns":     "namespaces",
+		"ds":     "daemonsets.apps",
+		"ep":     "endpoints",
+		"deploy": "deployments.apps",
+		"HR":     "helmreleases.helm.toolkit.fluxcd.io",
+	} {
+		s.input.SetValue(q)
+		s.refilter()
+		if it, ok := s.current(); !ok || it.id != want {
+			t.Errorf("q=%q: got %q, want %q", q, it.id, want)
+		}
 	}
 }

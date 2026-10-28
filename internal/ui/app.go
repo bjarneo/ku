@@ -2299,7 +2299,7 @@ func (a App) openPalette() (tea.Model, tea.Cmd) {
 		if a.dev && devHiddenResource(ri) {
 			continue
 		}
-		items = append(items, selItem{title: ri.Resource, desc: resourceDesc(ri), id: "res:" + ri.Key()})
+		items = append(items, selItem{title: ri.Resource, desc: resourceDesc(ri), id: "res:" + ri.Key(), aliases: ri.ShortNames})
 	}
 	a.sel.open(selPalette, "Command palette", "type a command or resource", items, false)
 	a.overlay = overlaySelector
@@ -2312,7 +2312,7 @@ func (a App) openResourceJump() (tea.Model, tea.Cmd) {
 		if a.dev && devHiddenResource(ri) {
 			continue
 		}
-		items = append(items, selItem{title: ri.Resource, desc: resourceDesc(ri), id: ri.Key()})
+		items = append(items, selItem{title: ri.Resource, desc: resourceDesc(ri), id: ri.Key(), aliases: ri.ShortNames})
 	}
 	a.sel.open(selResource, "Jump to resource", "pods, deploy, svc…", items, false)
 	a.overlay = overlaySelector

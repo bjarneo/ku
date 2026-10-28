@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sort"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -45,10 +46,21 @@ func selectorVisibleRows(height int) int {
 
 // selItem is one selectable entry. id is the stable value passed back to the
 // app when chosen; title/desc are shown and matched against.
+// aliases are matched but not shown; an exact alias match ranks first.
 type selItem struct {
-	title string
-	desc  string
-	id    string
+	title   string
+	desc    string
+	id      string
+	aliases []string
+}
+
+func (it selItem) hasAlias(q string) bool {
+	for _, a := range it.aliases {
+		if strings.EqualFold(a, q) {
+			return true
+		}
+	}
+	return false
 }
 
 // selResult is returned from the selector's Update when the user acts.
@@ -115,10 +127,20 @@ func (s *selector) refilter() {
 	for i := range idx {
 		idx[i] = i
 	}
-	s.match = fuzzyRank(idx, s.input.Value(), func(i int) string {
+	q := s.input.Value()
+	s.match = fuzzyRank(idx, q, func(i int) string {
 		it := s.items[i]
-		return it.title + " " + it.desc + " " + it.id
+		hay := it.title + " " + it.desc + " " + it.id
+		if len(it.aliases) > 0 {
+			hay += " " + strings.Join(it.aliases, " ")
+		}
+		return hay
 	})
+	if q = strings.TrimSpace(q); q != "" {
+		sort.SliceStable(s.match, func(i, j int) bool {
+			return s.items[s.match[i]].hasAlias(q) && !s.items[s.match[j]].hasAlias(q)
+		})
+	}
 	s.clampCursor()
 }
 
