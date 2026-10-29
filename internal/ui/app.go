@@ -936,6 +936,8 @@ func (a App) updateMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.openRestart()
 	case key.Matches(msg, a.keys.Trigger):
 		return a.openTriggerJob()
+	case key.Matches(msg, a.keys.DeleteAll):
+		return a.openDeleteAll()
 	case key.Matches(msg, a.keys.Delete):
 		return a.openDelete()
 	case key.Matches(msg, a.keys.Cordon):
@@ -1986,6 +1988,20 @@ func (a App) openDelete() (tea.Model, tea.Cmd) {
 		deleteCmd(a.client, a.res, row.Namespace, row.Name))
 }
 
+// openDeleteAll deletes every row currently displayed (respecting an active
+// filter), in one confirm.
+func (a App) openDeleteAll() (tea.Model, tea.Cmd) {
+	if a.denyReadOnly("delete") {
+		return a, nil
+	}
+	rows := a.table.rows
+	if len(rows) == 0 {
+		return a, nil
+	}
+	return a.confirmAction("Delete "+a.res.Kind+"s", fmt.Sprintf("Delete all %d %s?", len(rows), a.res.Resource), true,
+		bulkDeleteCmd(a.client, a.res, rows))
+}
+
 func (a App) openRestart() (tea.Model, tea.Cmd) {
 	if a.denyReadOnly("restart") {
 		return a, nil
@@ -2969,7 +2985,7 @@ func (a App) hints() []hint {
 		h = append(h, hint{"t", "trigger"})
 	}
 	if writes {
-		h = append(h, hint{"e", "edit"}, hint{"x", "del"})
+		h = append(h, hint{"e", "edit"}, hint{"x", "del"}, hint{"X", "del all"})
 	}
 	for _, p := range a.activePlugins() {
 		h = append(h, hint{p.key, p.desc})
